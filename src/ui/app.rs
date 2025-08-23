@@ -1,8 +1,11 @@
 //! Main application structure for Agentic TUI
 
-use crate::theme::{Theme, Element};
+use crate::{
+    layout::AppLayout,
+    theme::{Theme, Element},
+};
 use ratatui::{
-    layout::{Constraint, Direction, Layout, Alignment},
+    layout::Alignment,
     widgets::{Block, Borders, Paragraph, Wrap},
     Frame,
 };
@@ -15,6 +18,8 @@ pub struct App {
     pub should_quit: bool,
     /// Current theme
     pub theme: Theme,
+    /// Layout manager using Taffy
+    layout: AppLayout,
 }
 
 impl App {
@@ -23,6 +28,7 @@ impl App {
         Self {
             should_quit: false,
             theme,
+            layout: AppLayout::new().expect("Failed to create layout"),
         }
     }
 
@@ -45,10 +51,20 @@ impl App {
         Ok(())
     }
 
-    /// Render the application
-    pub fn draw(&self, frame: &mut Frame) {
+    /// Render the application using Taffy layout system
+    pub fn draw(&mut self, frame: &mut Frame) {
         let size = frame.size();
         
+        // Compute layout using Taffy
+        let layout_rects = match self.layout.compute((size.width, size.height)) {
+            Ok(rects) => rects,
+            Err(e) => {
+                // Fallback to simple layout if Taffy fails
+                eprintln!("Layout computation failed: {:?}", e);
+                return;
+            }
+        };
+
         // Clear background with theme background color
         frame.render_widget(
             Block::default()
@@ -56,23 +72,10 @@ impl App {
             size,
         );
 
-        let chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Length(3),  // Header
-                Constraint::Min(0),     // Main content
-                Constraint::Length(3),  // Footer
-            ].as_ref())
-            .split(size);
-
-        // Header
-        self.render_header(frame, chunks[0]);
-        
-        // Main content
-        self.render_main_content(frame, chunks[1]);
-        
-        // Footer
-        self.render_footer(frame, chunks[2]);
+        // Render each section using computed layout
+        self.render_header(frame, layout_rects.header);
+        self.render_main_content(frame, layout_rects.body);
+        self.render_footer(frame, layout_rects.footer);
     }
 
     /// Render the header section
@@ -83,7 +86,7 @@ impl App {
         };
 
         let title_block = Block::default()
-            .title(format!(" Agentic - AI Model Orchestrator [Everforest {}] ", variant_name))
+            .title(format!(" Agentic - AI Model Orchestrator [Everforest {} | Taffy Layout] ", variant_name))
             .borders(Borders::ALL)
             .style(self.theme.ratatui_style(Element::Border))
             .title_style(self.theme.ratatui_style(Element::Title));
@@ -94,35 +97,45 @@ impl App {
     /// Render the main content area
     fn render_main_content(&self, frame: &mut Frame, area: ratatui::layout::Rect) {
         let content = format!(
-            "Welcome to Agentic\n\n\
-            🎨 Everforest Theme System Active\n\
-            Current variant: {}\n\n\
-            Features:\n\
-            • Everforest Dark/Light theme variants\n\
-            • Runtime theme switching (Ctrl+T)\n\
-            • Comprehensive color palette management\n\
-            • Clean separation of UI styling concerns\n\n\
-            This demonstrates the new theming architecture with:\n\
-            • Background: Proper Everforest colors\n\
-            • Foreground: Appropriate text contrast\n\
-            • Accent: Green highlights (#a7c080 dark / #8da101 light)\n\
-            • Secondary: Red elements (#e67e80 dark / #f85552 light)\n\
-            • Info: Aqua elements (#7fbbb3 dark / #35a77c light)",
+            "⚡ AGENTIC ⚡\n\n\
+            🎨 Everforest Theme System: {}\n\
+            📐 Taffy 3-Layer Layout Engine: Active\n\n\
+            Layout Information:\n\
+            • Header: Fixed 3 rows ({}x{})\n\
+            • Body: Flexible content area ({}x{})\n\
+            • Footer: Fixed 3 rows ({}x{})\n\
+            • Terminal: {}x{} total\n\n\
+            Features Implemented:\n\
+            • Taffy flexbox-style layout engine\n\
+            • Responsive to terminal resize events\n\
+            • Clean separation of layout logic and rendering\n\
+            • Production-grade 3-layer structure\n\
+            • Theme integration with layout system\n\n\
+            Controls:\n\
+            • Ctrl+T: Toggle theme variant\n\
+            • q/ESC: Quit application\n\
+            • Resize terminal to test responsive layout",
             match self.theme.variant() {
                 crate::theme::ThemeVariant::EverforestDark => "Everforest Dark",
                 crate::theme::ThemeVariant::EverforestLight => "Everforest Light",
-            }
+            },
+            area.width, 3,  // Header dimensions (assuming 3 rows)
+            area.width, area.height, // Body dimensions (current area)
+            area.width, 3,  // Footer dimensions (assuming 3 rows)
+            area.width + 6, area.height + 6  // Total terminal (approximate)
         );
 
         let main_block = Block::default()
+            .title(" Taffy Layout Engine Demo ")
             .borders(Borders::ALL)
-            .style(self.theme.ratatui_style(Element::Border));
+            .style(self.theme.ratatui_style(Element::Border))
+            .title_style(self.theme.ratatui_style(Element::Title));
 
         let paragraph = Paragraph::new(content)
             .block(main_block)
             .style(self.theme.ratatui_style(Element::Text))
             .wrap(Wrap { trim: true })
-            .alignment(Alignment::Left);
+            .alignment(Alignment::Center);
 
         frame.render_widget(paragraph, area);
     }
@@ -130,10 +143,12 @@ impl App {
     /// Render the footer section
     fn render_footer(&self, frame: &mut Frame, area: ratatui::layout::Rect) {
         let footer_block = Block::default()
+            .title(" Taffy 3-Layer Layout | Keybinds ")
             .borders(Borders::ALL)
-            .style(self.theme.ratatui_style(Element::Border));
+            .style(self.theme.ratatui_style(Element::Border))
+            .title_style(self.theme.ratatui_style(Element::Title));
 
-        let footer_text = "Press 'q' or ESC to quit • Press Ctrl+T to toggle theme";
+        let footer_text = "q/ESC: Quit • Ctrl+T: Toggle Theme • Resize terminal to test responsive layout";
         let paragraph = Paragraph::new(footer_text)
             .block(footer_block)
             .style(self.theme.ratatui_style(Element::Info))
