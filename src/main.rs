@@ -8,6 +8,8 @@ use std::error::Error;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
+// INTENTIONAL FORMATTING VIOLATION - Testing CI pipeline failure detection
+println!("This line has inconsistent spacing");println!("And this one is missing a space after semicolon");let x=1+2+3+4  ;   // Bad spacing
     // Initialize theme and application
     let theme = Theme::default(); // Start with Everforest Dark
     let mut app = App::new(theme);
