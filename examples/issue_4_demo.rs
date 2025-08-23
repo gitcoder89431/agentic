@@ -1,10 +1,10 @@
 #!/usr/bin/env cargo
 
 //! # Issue #4: Input Handling & State Management Demo
-//! 
+//!
 //! This demo showcases the event-driven input handling and state management
 //! system implemented for Issue #4. It demonstrates:
-//! 
+//!
 //! - Clean event-driven architecture with AppEvent enum
 //! - Proper async/await runtime with tokio
 //! - State management through AppState enum
@@ -12,13 +12,13 @@
 //! - Input handling with keyboard events
 //! - Terminal resize detection and handling
 //! - Error state management
-//! 
+//!
 //! ## Features Demonstrated:
 //! - **ESC/q**: Quit application
 //! - **t/T**: Toggle between Everforest Dark/Light themes
 //! - **Ctrl+C**: Force quit with signal handling
 //! - **Terminal Resize**: Automatic layout recalculation
-//! 
+//!
 //! ## Architecture:
 //! ```
 //! ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
@@ -55,24 +55,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("  • Resize terminal: Test responsive layout");
     println!();
     println!("Press Enter to launch TUI...");
-    
+
     // Wait for user input
     let mut input = String::new();
     std::io::stdin().read_line(&mut input)?;
-    
+
     // Initialize theme and application
     let theme = Theme::default();
     let mut app = App::new(theme);
-    
+
     // Setup terminal
     let mut terminal = App::setup_terminal()?;
-    
+
     // Run the application
     let result = app.run(&mut terminal).await;
-    
+
     // Always restore terminal
     App::restore_terminal(&mut terminal)?;
-    
+
     match result {
         Ok(_) => {
             println!("\n✅ Application exited successfully!");
@@ -88,6 +88,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             return Err(e);
         }
     }
-    
+
     Ok(())
 }
