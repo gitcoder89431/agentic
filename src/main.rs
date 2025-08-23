@@ -4,19 +4,7 @@
 //! Core philosophy: "Karesansui" zen garden approach promoting focus through single-tasking interface.
 
 use agentic::{theme::Theme, ui::App};
-use crossterm::{
-    event::{DisableMouseCapture, EnableMouseCapture},
-    execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
-};
-use ratatui::{
-    backend::CrosstermBackend,
-    Terminal,
-};
-use std::{
-    error::Error,
-    io,
-};
+use std::error::Error;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -25,43 +13,20 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let mut app = App::new(theme);
 
     // Setup terminal
-    enable_raw_mode()?;
-    let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
-    let backend = CrosstermBackend::new(stdout);
-    let mut terminal = Terminal::new(backend)?;
+    let mut terminal = App::setup_terminal()?;
 
-    // Main application loop
-    let result = run_app(&mut terminal, &mut app).await;
+    // Run the main application loop
+    let result = app.run(&mut terminal).await;
 
-    // Restore terminal
-    disable_raw_mode()?;
-    execute!(
-        terminal.backend_mut(),
-        LeaveAlternateScreen,
-        DisableMouseCapture
-    )?;
-    terminal.show_cursor()?;
+    // Restore terminal to normal mode
+    App::restore_terminal(&mut terminal)?;
 
+    // Handle any errors that occurred during execution
     if let Err(err) = result {
-        eprintln!("Error: {:?}", err);
+        eprintln!("Application error: {:?}", err);
+        std::process::exit(1);
     }
 
-    Ok(())
-}
-
-async fn run_app<B: ratatui::backend::Backend>(
-    terminal: &mut Terminal<B>,
-    app: &mut App,
-) -> io::Result<()> {
-    loop {
-        terminal.draw(|f| app.draw(f))?;
-
-        app.handle_events()?;
-
-        if app.should_quit {
-            break;
-        }
-    }
+    println!("Agentic shutdown complete. Thank you for using our AI Model Orchestrator!");
     Ok(())
 }
