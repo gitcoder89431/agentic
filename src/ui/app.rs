@@ -149,14 +149,8 @@ impl App {
             crate::theme::ThemeVariant::EverforestLight => "Light",
         };
 
-        let state_indicator = match self.state {
-            AppState::Running => "🟢 Running",
-            AppState::Quitting => "🔴 Quitting",
-            AppState::Error(_) => "⚠️ Error",
-        };
-
         let title_block = Block::default()
-            .title(format!(" Agentic [Everforest {} | Taffy | {}] ", variant_name, state_indicator))
+            .title(format!(" Agentic v0.1.0 | {} ", variant_name))
             .borders(Borders::ALL)
             .style(self.theme.ratatui_style(Element::Border))
             .title_style(self.theme.ratatui_style(Element::Title));
@@ -168,38 +162,38 @@ impl App {
     fn render_main_content(&self, frame: &mut Frame, area: ratatui::layout::Rect) {
         let content = match &self.state {
             AppState::Running => {
-                format!(
-                    "🎮 AGENTIC - INPUT HANDLING & STATE MANAGEMENT 🎮\n\n\
-                    🎨 Theme System: {}\n\
-                    📐 Layout Engine: Taffy 3-Layer Active\n\
-                    ⌨️  Input System: Event-Driven Architecture\n\
-                    🔄 State Management: Clean Lifecycle Handling\n\n\
-                    Layout Information:\n\
-                    • Header: Fixed 3 rows ({}x{})\n\
-                    • Body: Flexible content area ({}x{})\n\
-                    • Footer: Fixed 3 rows ({}x{})\n\
-                    • Terminal: {}x{} total\n\
-                    • Last Resize: {:?}\n\n\
-                    🎯 Features Implemented:\n\
-                    • Responsive async event loop (~60 FPS)\n\
-                    • Clean state machine (Running → Quitting)\n\
-                    • Theme persistence during session\n\
-                    • Terminal resize handling\n\
-                    • Error recovery for terminal operations\n\
-                    • Force quit protection (Ctrl+C)\n\n\
-                    🎹 Key Bindings:\n\
-                    • ESC/q: Graceful quit\n\
-                    • t/T: Toggle theme (Everforest Dark ↔ Light)\n\
-                    • Ctrl+C: Force quit\n\
-                    • Resize terminal: Automatic layout adjustment",
+                // ASCII Art Logo for Agentic
+                format!(r#"
+
+    ╔═══════════════════════════════════════════════════════════════╗
+    ║                                                               ║
+    ║      █████╗  ██████╗ ███████╗███╗   ██╗████████╗██╗ ██████╗   ║
+    ║     ██╔══██╗██╔════╝ ██╔════╝████╗  ██║╚══██╔══╝██║██╔════╝   ║
+    ║     ███████║██║  ███╗█████╗  ██╔██╗ ██║   ██║   ██║██║        ║
+    ║     ██╔══██║██║   ██║██╔══╝  ██║╚██╗██║   ██║   ██║██║        ║
+    ║     ██║  ██║╚██████╔╝███████╗██║ ╚████║   ██║   ██║╚██████╗   ║
+    ║     ╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚═╝  ╚═══╝   ╚═╝   ╚═╝ ╚═════╝   ║
+    ║                                                               ║
+    ║                    🧘 Zen Garden Terminal UI 🧘               ║
+    ║                                                               ║
+    ║              AI Model Orchestrator & Agent Framework          ║
+    ║                                                               ║
+    ╚═══════════════════════════════════════════════════════════════╝
+
+
+                    🎨 Everforest {} Theme Active
+                    📐 Taffy 3-Layer Layout System
+                    ⌨️  Event-Driven Input Architecture
+                    🔄 Production-Ready State Management
+
+                  Terminal Size: {}x{} | Last Resize: {:?}
+
+"#,
                     match self.theme.variant() {
-                        crate::theme::ThemeVariant::EverforestDark => "Everforest Dark",
-                        crate::theme::ThemeVariant::EverforestLight => "Everforest Light",
+                        crate::theme::ThemeVariant::EverforestDark => "Dark",
+                        crate::theme::ThemeVariant::EverforestLight => "Light",
                     },
-                    area.width, 3,  // Header dimensions
-                    area.width, area.height, // Body dimensions
-                    area.width, 3,  // Footer dimensions
-                    area.width + 6, area.height + 6, // Total terminal (approximate)
+                    area.width, area.height,
                     self.last_size
                 )
             }
@@ -212,7 +206,7 @@ impl App {
         };
 
         let main_block = Block::default()
-            .title(" Event-Driven TUI Demo ")
+            .title(" Agentic | AI Model Orchestrator | Zen Garden TUI ")
             .borders(Borders::ALL)
             .style(self.theme.ratatui_style(Element::Border))
             .title_style(self.theme.ratatui_style(Element::Title));
@@ -228,16 +222,21 @@ impl App {
 
     /// Render the footer section
     fn render_footer(&self, frame: &mut Frame, area: ratatui::layout::Rect) {
+        let current_theme = match self.theme.variant() {
+            crate::theme::ThemeVariant::EverforestDark => "Dark",
+            crate::theme::ThemeVariant::EverforestLight => "Light",
+        };
+
         let footer_block = Block::default()
-            .title(" Input System | State Management | Keybinds ")
+            .title(" Zen Garden Terminal UI | Production Ready ")
             .borders(Borders::ALL)
             .style(self.theme.ratatui_style(Element::Border))
             .title_style(self.theme.ratatui_style(Element::Title));
 
         let footer_text = match self.state {
-            AppState::Running => "ESC/q: Quit • t/T: Toggle Theme • Ctrl+C: Force Quit • Resize: Automatic Layout",
-            AppState::Quitting => "Application shutting down...",
-            AppState::Error(_) => "Error state - Press ESC/q to quit",
+            AppState::Running => format!("ESC/q: Quit | T: Toggle Theme | Current: [{}] | Production v0.1.0", current_theme),
+            AppState::Quitting => "Application shutting down gracefully...".to_string(),
+            AppState::Error(_) => "Error state - Press ESC/q to quit".to_string(),
         };
 
         let paragraph = Paragraph::new(footer_text)
