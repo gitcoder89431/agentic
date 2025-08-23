@@ -3,11 +3,11 @@
 //! Implements a production-grade 3-layer layout (Header, Body, Footer) using Taffy's
 //! flexbox-style layout engine for responsive terminal layouts.
 
-use taffy::{
-    style::{Dimension, FlexDirection, Style},
-    TaffyTree, NodeId,
-};
 use ratatui::layout::Rect;
+use taffy::{
+    NodeId, TaffyTree,
+    style::{Dimension, FlexDirection, Style},
+};
 
 /// Layout rectangles for the 3-layer application structure
 #[derive(Debug, Clone)]
@@ -68,14 +68,17 @@ impl AppLayout {
         })?;
 
         // Create root container with vertical flex direction
-        let root = taffy.new_with_children(Style {
-            size: taffy::geometry::Size {
-                width: Dimension::Percent(1.0),
-                height: Dimension::Percent(1.0),
+        let root = taffy.new_with_children(
+            Style {
+                size: taffy::geometry::Size {
+                    width: Dimension::Percent(1.0),
+                    height: Dimension::Percent(1.0),
+                },
+                flex_direction: FlexDirection::Column,
+                ..Default::default()
             },
-            flex_direction: FlexDirection::Column,
-            ..Default::default()
-        }, &[header, body, footer])?;
+            &[header, body, footer],
+        )?;
 
         Ok(Self {
             taffy,
@@ -135,7 +138,7 @@ impl AppLayout {
     }
 
     /// Get the current layout rectangles (header, body, footer)
-    /// 
+    ///
     /// Note: This requires compute() to be called first with current terminal size
     pub fn get_rects(&self) -> Result<(Rect, Rect, Rect), taffy::TaffyError> {
         let header_layout = self.taffy.layout(self.header)?;

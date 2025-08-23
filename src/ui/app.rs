@@ -3,18 +3,18 @@
 use crate::{
     events::{AppEvent, AppState, EventHandler},
     layout::AppLayout,
-    theme::{Theme, Element},
-};
-use ratatui::{
-    backend::Backend,
-    layout::Alignment,
-    widgets::{Block, Borders, Paragraph, Wrap},
-    Frame, Terminal,
+    theme::{Element, Theme},
 };
 use crossterm::{
     event::{DisableMouseCapture, EnableMouseCapture},
     execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
+};
+use ratatui::{
+    Frame, Terminal,
+    backend::Backend,
+    layout::Alignment,
+    widgets::{Block, Borders, Paragraph, Wrap},
 };
 use std::{io, time::Duration};
 use tokio::time;
@@ -68,13 +68,13 @@ impl App {
                 _ = interval.tick() => {
                     // Render the UI
                     terminal.draw(|f| self.draw(f))?;
-                    
+
                     // Check if we should quit
                     if self.should_quit() {
                         break;
                     }
                 }
-                
+
                 // Handle input events
                 event_result = {
                     let event_handler = self.event_handler.clone();
@@ -118,7 +118,7 @@ impl App {
     /// Render the application using Taffy layout system
     pub fn draw(&mut self, frame: &mut Frame) {
         let size = frame.size();
-        
+
         // Compute layout using Taffy
         let layout_rects = match self.layout.compute((size.width, size.height)) {
             Ok(rects) => rects,
@@ -131,8 +131,7 @@ impl App {
 
         // Clear background with theme background color
         frame.render_widget(
-            Block::default()
-                .style(self.theme.ratatui_style(Element::Background)),
+            Block::default().style(self.theme.ratatui_style(Element::Background)),
             size,
         );
 
@@ -234,7 +233,10 @@ impl App {
             .title_style(self.theme.ratatui_style(Element::Title));
 
         let footer_text = match self.state {
-            AppState::Running => format!("ESC/q: Quit | T: Toggle Theme | Current: [{}] | Production v0.1.0", current_theme),
+            AppState::Running => format!(
+                "ESC/q: Quit | T: Toggle Theme | Current: [{}] | Production v0.1.0",
+                current_theme
+            ),
             AppState::Quitting => "Application shutting down gracefully...".to_string(),
             AppState::Error(_) => "Error state - Press ESC/q to quit".to_string(),
         };
@@ -248,7 +250,9 @@ impl App {
     }
 
     /// Setup terminal for TUI mode
-    pub fn setup_terminal() -> Result<Terminal<ratatui::backend::CrosstermBackend<io::Stdout>>, Box<dyn std::error::Error>> {
+    pub fn setup_terminal()
+    -> Result<Terminal<ratatui::backend::CrosstermBackend<io::Stdout>>, Box<dyn std::error::Error>>
+    {
         enable_raw_mode()?;
         let mut stdout = io::stdout();
         execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
@@ -258,7 +262,9 @@ impl App {
     }
 
     /// Restore terminal to normal mode
-    pub fn restore_terminal<B: Backend + std::io::Write>(terminal: &mut Terminal<B>) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn restore_terminal<B: Backend + std::io::Write>(
+        terminal: &mut Terminal<B>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         disable_raw_mode()?;
         execute!(
             terminal.backend_mut(),

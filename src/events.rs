@@ -43,7 +43,9 @@ impl EventHandler {
                     match key_event.code {
                         KeyCode::Char('q') | KeyCode::Esc => Ok(AppEvent::Quit),
                         KeyCode::Char('t') | KeyCode::Char('T') => Ok(AppEvent::ToggleTheme),
-                        KeyCode::Char('c') if key_event.modifiers.contains(KeyModifiers::CONTROL) => {
+                        KeyCode::Char('c')
+                            if key_event.modifiers.contains(KeyModifiers::CONTROL) =>
+                        {
                             Ok(AppEvent::ForceQuit)
                         }
                         _ => Ok(AppEvent::None),
