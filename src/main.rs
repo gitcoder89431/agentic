@@ -21,8 +21,8 @@ use std::{
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     // Initialize theme and application
-    let _theme = Theme::new();
-    let mut app = App::new();
+    let theme = Theme::default(); // Start with Everforest Dark
+    let mut app = App::new(theme);
 
     // Setup terminal
     enable_raw_mode()?;
