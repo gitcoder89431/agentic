@@ -5,6 +5,7 @@
 
 pub mod events;
 pub mod layout;
+pub mod settings;
 pub mod theme;
 pub mod ui;
 
