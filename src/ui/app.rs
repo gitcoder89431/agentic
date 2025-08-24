@@ -185,10 +185,6 @@ impl App {
                     self.state = AppState::Error(format!("Settings error: {}", e));
                 }
             }
-            AppEvent::ToggleTheme => {
-                // T key functionality removed in Issue #21
-                // Theme changes now only available through settings modal
-            }
             AppEvent::Resize(width, height) => {
                 self.last_size = Some((width, height));
                 // Layout will be recalculated in the next draw call

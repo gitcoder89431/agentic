@@ -10,8 +10,6 @@ use std::time::Duration;
 pub enum AppEvent {
     /// User requested to quit the application
     Quit,
-    /// User requested to toggle the theme variant
-    ToggleTheme,
     /// User requested to open settings modal
     OpenSettings,
     /// User requested to close settings modal

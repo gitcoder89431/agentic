@@ -92,7 +92,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         AppEvent::OpenSettings,
         AppEvent::CloseSettings,
         AppEvent::SettingsAction(SettingsAction::ChangeTheme(ThemeVariant::EverforestDark)),
-        AppEvent::ToggleTheme,
         AppEvent::Quit,
     ];
 
@@ -109,7 +108,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("✅ No state machine edge cases or deadlocks");
 
     println!("\n🎨 State Machine Workflow:");
-    println!("• Main → Settings: ',' key (AppEvent::OpenSettings)");
+    println!("• Main → Settings: 'S' key (AppEvent::OpenSettings)");
     println!("• Settings → Main: ESC key (AppEvent::CloseSettings)");
     println!("• Theme changes: Apply immediately via SettingsAction");
     println!("• State persistence: Previous state remembered for ESC");
