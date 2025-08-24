@@ -10,9 +10,9 @@ use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     widgets::{Block, Borders, Clear, Paragraph},
 };
-use tokio::{sync::mpsc, time::timeout};
 use reqwest::Client;
 use std::time::{Duration, Instant};
+use tokio::{sync::mpsc, time::timeout};
 
 /// Provider configuration types for backend communication
 #[derive(Debug, Clone, PartialEq)]
@@ -188,7 +188,7 @@ pub async fn validate_local_provider(endpoint: &str) -> AsyncValidationResult {
     let client = Client::new();
     let url = format!("{}/v1/models", endpoint.trim_end_matches('/'));
     let start_time = Instant::now();
-    
+
     match timeout(Duration::from_secs(5), client.get(&url).send()).await {
         Ok(Ok(response)) if response.status().is_success() => {
             let elapsed = start_time.elapsed();
@@ -198,27 +198,25 @@ pub async fn validate_local_provider(endpoint: &str) -> AsyncValidationResult {
                 response_time: Some(elapsed),
             }
         }
-        Ok(Ok(response)) => {
-            AsyncValidationResult {
-                status: ValidationStatus::Invalid,
-                message: Some(format!("Server error: {} {}", response.status().as_u16(), response.status().canonical_reason().unwrap_or("Unknown"))),
-                response_time: None,
-            }
-        }
-        Ok(Err(e)) => {
-            AsyncValidationResult {
-                status: ValidationStatus::Invalid,
-                message: Some(format!("Connection failed: {}", e)),
-                response_time: None,
-            }
-        }
-        Err(_) => {
-            AsyncValidationResult {
-                status: ValidationStatus::Invalid,
-                message: Some("Connection timeout (5s)".to_string()),
-                response_time: None,
-            }
-        }
+        Ok(Ok(response)) => AsyncValidationResult {
+            status: ValidationStatus::Invalid,
+            message: Some(format!(
+                "Server error: {} {}",
+                response.status().as_u16(),
+                response.status().canonical_reason().unwrap_or("Unknown")
+            )),
+            response_time: None,
+        },
+        Ok(Err(e)) => AsyncValidationResult {
+            status: ValidationStatus::Invalid,
+            message: Some(format!("Connection failed: {}", e)),
+            response_time: None,
+        },
+        Err(_) => AsyncValidationResult {
+            status: ValidationStatus::Invalid,
+            message: Some("Connection timeout (5s)".to_string()),
+            response_time: None,
+        },
     }
 }
 
@@ -227,13 +225,17 @@ pub async fn validate_openrouter_provider(api_key: &str) -> AsyncValidationResul
     let client = Client::new();
     let url = "https://openrouter.ai/api/v1/models";
     let start_time = Instant::now();
-    
-    match timeout(Duration::from_secs(5), client
-        .get(url)
-        .header("Authorization", format!("Bearer {}", api_key))
-        .header("HTTP-Referer", "https://github.com/gitcoder89431/agentic")
-        .header("X-Title", "Agentic TUI")
-        .send()).await 
+
+    match timeout(
+        Duration::from_secs(5),
+        client
+            .get(url)
+            .header("Authorization", format!("Bearer {}", api_key))
+            .header("HTTP-Referer", "https://github.com/gitcoder89431/agentic")
+            .header("X-Title", "Agentic TUI")
+            .send(),
+    )
+    .await
     {
         Ok(Ok(response)) if response.status().is_success() => {
             let elapsed = start_time.elapsed();
@@ -243,41 +245,35 @@ pub async fn validate_openrouter_provider(api_key: &str) -> AsyncValidationResul
                 response_time: Some(elapsed),
             }
         }
-        Ok(Ok(response)) if response.status() == 401 => {
-            AsyncValidationResult {
-                status: ValidationStatus::Invalid,
-                message: Some("Invalid API key - authentication failed".to_string()),
-                response_time: None,
-            }
-        }
-        Ok(Ok(response)) if response.status() == 429 => {
-            AsyncValidationResult {
-                status: ValidationStatus::Invalid,
-                message: Some("Rate limited - too many requests".to_string()),
-                response_time: None,
-            }
-        }
-        Ok(Ok(response)) => {
-            AsyncValidationResult {
-                status: ValidationStatus::Invalid,
-                message: Some(format!("API error: {} {}", response.status().as_u16(), response.status().canonical_reason().unwrap_or("Unknown"))),
-                response_time: None,
-            }
-        }
-        Ok(Err(e)) => {
-            AsyncValidationResult {
-                status: ValidationStatus::Invalid,
-                message: Some(format!("Connection failed: {}", e)),
-                response_time: None,
-            }
-        }
-        Err(_) => {
-            AsyncValidationResult {
-                status: ValidationStatus::Invalid,
-                message: Some("Connection timeout (5s)".to_string()),
-                response_time: None,
-            }
-        }
+        Ok(Ok(response)) if response.status() == 401 => AsyncValidationResult {
+            status: ValidationStatus::Invalid,
+            message: Some("Invalid API key - authentication failed".to_string()),
+            response_time: None,
+        },
+        Ok(Ok(response)) if response.status() == 429 => AsyncValidationResult {
+            status: ValidationStatus::Invalid,
+            message: Some("Rate limited - too many requests".to_string()),
+            response_time: None,
+        },
+        Ok(Ok(response)) => AsyncValidationResult {
+            status: ValidationStatus::Invalid,
+            message: Some(format!(
+                "API error: {} {}",
+                response.status().as_u16(),
+                response.status().canonical_reason().unwrap_or("Unknown")
+            )),
+            response_time: None,
+        },
+        Ok(Err(e)) => AsyncValidationResult {
+            status: ValidationStatus::Invalid,
+            message: Some(format!("Connection failed: {}", e)),
+            response_time: None,
+        },
+        Err(_) => AsyncValidationResult {
+            status: ValidationStatus::Invalid,
+            message: Some("Connection timeout (5s)".to_string()),
+            response_time: None,
+        },
     }
 }
 
@@ -289,12 +285,14 @@ impl ValidationService {
             tx,
         }
     }
-    
+
     /// Start async validation for a provider
     pub async fn validate_provider(&self, provider_type: ProviderType, config: &ProviderConfig) {
         // Send start event
-        let _ = self.tx.send(ValidationEvent::StartValidation(provider_type.clone()));
-        
+        let _ = self
+            .tx
+            .send(ValidationEvent::StartValidation(provider_type.clone()));
+
         let result = match provider_type {
             ProviderType::Local => {
                 if let Some(endpoint) = &config.endpoint_url {
@@ -319,19 +317,19 @@ impl ValidationService {
                 }
             }
         };
-        
+
         // Send completion event
         let _ = self.tx.send(ValidationEvent::ValidationComplete {
             provider: provider_type,
             result,
         });
     }
-    
+
     /// Validate local endpoint using the service's client
     async fn validate_local_endpoint(&self, endpoint: &str) -> AsyncValidationResult {
         let url = format!("{}/v1/models", endpoint.trim_end_matches('/'));
         let start_time = Instant::now();
-        
+
         match timeout(Duration::from_secs(5), self.client.get(&url).send()).await {
             Ok(Ok(response)) if response.status().is_success() => {
                 let elapsed = start_time.elapsed();
@@ -341,41 +339,43 @@ impl ValidationService {
                     response_time: Some(elapsed),
                 }
             }
-            Ok(Ok(response)) => {
-                AsyncValidationResult {
-                    status: ValidationStatus::Invalid,
-                    message: Some(format!("Server error: {} {}", response.status().as_u16(), response.status().canonical_reason().unwrap_or("Unknown"))),
-                    response_time: None,
-                }
-            }
-            Ok(Err(e)) => {
-                AsyncValidationResult {
-                    status: ValidationStatus::Invalid,
-                    message: Some(format!("Connection failed: {}", e)),
-                    response_time: None,
-                }
-            }
-            Err(_) => {
-                AsyncValidationResult {
-                    status: ValidationStatus::Invalid,
-                    message: Some("Connection timeout (5s)".to_string()),
-                    response_time: None,
-                }
-            }
+            Ok(Ok(response)) => AsyncValidationResult {
+                status: ValidationStatus::Invalid,
+                message: Some(format!(
+                    "Server error: {} {}",
+                    response.status().as_u16(),
+                    response.status().canonical_reason().unwrap_or("Unknown")
+                )),
+                response_time: None,
+            },
+            Ok(Err(e)) => AsyncValidationResult {
+                status: ValidationStatus::Invalid,
+                message: Some(format!("Connection failed: {}", e)),
+                response_time: None,
+            },
+            Err(_) => AsyncValidationResult {
+                status: ValidationStatus::Invalid,
+                message: Some("Connection timeout (5s)".to_string()),
+                response_time: None,
+            },
         }
     }
-    
+
     /// Validate OpenRouter API key using the service's client
     async fn validate_openrouter_key(&self, api_key: &str) -> AsyncValidationResult {
         let url = "https://openrouter.ai/api/v1/models";
         let start_time = Instant::now();
-        
-        match timeout(Duration::from_secs(5), self.client
-            .get(url)
-            .header("Authorization", format!("Bearer {}", api_key))
-            .header("HTTP-Referer", "https://github.com/gitcoder89431/agentic")
-            .header("X-Title", "Agentic TUI")
-            .send()).await 
+
+        match timeout(
+            Duration::from_secs(5),
+            self.client
+                .get(url)
+                .header("Authorization", format!("Bearer {}", api_key))
+                .header("HTTP-Referer", "https://github.com/gitcoder89431/agentic")
+                .header("X-Title", "Agentic TUI")
+                .send(),
+        )
+        .await
         {
             Ok(Ok(response)) if response.status().is_success() => {
                 let elapsed = start_time.elapsed();
@@ -385,41 +385,35 @@ impl ValidationService {
                     response_time: Some(elapsed),
                 }
             }
-            Ok(Ok(response)) if response.status() == 401 => {
-                AsyncValidationResult {
-                    status: ValidationStatus::Invalid,
-                    message: Some("Invalid API key - authentication failed".to_string()),
-                    response_time: None,
-                }
-            }
-            Ok(Ok(response)) if response.status() == 429 => {
-                AsyncValidationResult {
-                    status: ValidationStatus::Invalid,
-                    message: Some("Rate limited - too many requests".to_string()),
-                    response_time: None,
-                }
-            }
-            Ok(Ok(response)) => {
-                AsyncValidationResult {
-                    status: ValidationStatus::Invalid,
-                    message: Some(format!("API error: {} {}", response.status().as_u16(), response.status().canonical_reason().unwrap_or("Unknown"))),
-                    response_time: None,
-                }
-            }
-            Ok(Err(e)) => {
-                AsyncValidationResult {
-                    status: ValidationStatus::Invalid,
-                    message: Some(format!("Connection failed: {}", e)),
-                    response_time: None,
-                }
-            }
-            Err(_) => {
-                AsyncValidationResult {
-                    status: ValidationStatus::Invalid,
-                    message: Some("Connection timeout (5s)".to_string()),
-                    response_time: None,
-                }
-            }
+            Ok(Ok(response)) if response.status() == 401 => AsyncValidationResult {
+                status: ValidationStatus::Invalid,
+                message: Some("Invalid API key - authentication failed".to_string()),
+                response_time: None,
+            },
+            Ok(Ok(response)) if response.status() == 429 => AsyncValidationResult {
+                status: ValidationStatus::Invalid,
+                message: Some("Rate limited - too many requests".to_string()),
+                response_time: None,
+            },
+            Ok(Ok(response)) => AsyncValidationResult {
+                status: ValidationStatus::Invalid,
+                message: Some(format!(
+                    "API error: {} {}",
+                    response.status().as_u16(),
+                    response.status().canonical_reason().unwrap_or("Unknown")
+                )),
+                response_time: None,
+            },
+            Ok(Err(e)) => AsyncValidationResult {
+                status: ValidationStatus::Invalid,
+                message: Some(format!("Connection failed: {}", e)),
+                response_time: None,
+            },
+            Err(_) => AsyncValidationResult {
+                status: ValidationStatus::Invalid,
+                message: Some("Connection timeout (5s)".to_string()),
+                response_time: None,
+            },
         }
     }
 }
@@ -1037,82 +1031,93 @@ impl Settings {
 
         Ok(())
     }
-    
+
     /// Start async validation for all configured providers
-    pub async fn validate_all_providers(&mut self, tx: mpsc::UnboundedSender<ValidationEvent>) -> Vec<tokio::task::JoinHandle<()>> {
+    pub async fn validate_all_providers(
+        &mut self,
+        tx: mpsc::UnboundedSender<ValidationEvent>,
+    ) -> Vec<tokio::task::JoinHandle<()>> {
         let validation_service = ValidationService::new(tx);
         let mut tasks = Vec::new();
-        
+
         // Start validation for local provider if configured
         if self.local_provider.endpoint_url.is_some() {
             self.local_provider.validation_status = ValidationStatus::Checking;
             let service = ValidationService::new(validation_service.tx.clone());
             let config = self.local_provider.clone();
             let task = tokio::spawn(async move {
-                service.validate_provider(ProviderType::Local, &config).await;
+                service
+                    .validate_provider(ProviderType::Local, &config)
+                    .await;
             });
             tasks.push(task);
         }
-        
+
         // Start validation for OpenRouter provider if configured
         if self.openrouter_provider.api_key.is_some() {
             self.openrouter_provider.validation_status = ValidationStatus::Checking;
             let service = ValidationService::new(validation_service.tx.clone());
             let config = self.openrouter_provider.clone();
             let task = tokio::spawn(async move {
-                service.validate_provider(ProviderType::OpenRouter, &config).await;
+                service
+                    .validate_provider(ProviderType::OpenRouter, &config)
+                    .await;
             });
             tasks.push(task);
         }
-        
+
         tasks
     }
-    
+
     /// Validate a specific provider asynchronously
-    pub async fn validate_provider(&mut self, provider_type: ProviderType, tx: mpsc::UnboundedSender<ValidationEvent>) -> tokio::task::JoinHandle<()> {
+    pub async fn validate_provider(
+        &mut self,
+        provider_type: ProviderType,
+        tx: mpsc::UnboundedSender<ValidationEvent>,
+    ) -> tokio::task::JoinHandle<()> {
         let validation_service = ValidationService::new(tx);
-        
+
         match provider_type {
             ProviderType::Local => {
                 self.local_provider.validation_status = ValidationStatus::Checking;
                 let config = self.local_provider.clone();
                 tokio::spawn(async move {
-                    validation_service.validate_provider(ProviderType::Local, &config).await;
+                    validation_service
+                        .validate_provider(ProviderType::Local, &config)
+                        .await;
                 })
             }
             ProviderType::OpenRouter => {
                 self.openrouter_provider.validation_status = ValidationStatus::Checking;
                 let config = self.openrouter_provider.clone();
                 tokio::spawn(async move {
-                    validation_service.validate_provider(ProviderType::OpenRouter, &config).await;
+                    validation_service
+                        .validate_provider(ProviderType::OpenRouter, &config)
+                        .await;
                 })
             }
         }
     }
-    
+
     /// Handle validation event results
     pub fn handle_validation_event(&mut self, event: ValidationEvent) {
         match event {
-            ValidationEvent::StartValidation(provider_type) => {
-                match provider_type {
-                    ProviderType::Local => {
-                        self.local_provider.validation_status = ValidationStatus::Checking;
-                    }
-                    ProviderType::OpenRouter => {
-                        self.openrouter_provider.validation_status = ValidationStatus::Checking;
-                    }
+            ValidationEvent::StartValidation(provider_type) => match provider_type {
+                ProviderType::Local => {
+                    self.local_provider.validation_status = ValidationStatus::Checking;
                 }
-            }
-            ValidationEvent::ValidationComplete { provider, result } => {
-                match provider {
-                    ProviderType::Local => {
-                        self.local_provider.validation_status = result.status;
-                    }
-                    ProviderType::OpenRouter => {
-                        self.openrouter_provider.validation_status = result.status;
-                    }
+                ProviderType::OpenRouter => {
+                    self.openrouter_provider.validation_status = ValidationStatus::Checking;
                 }
-            }
+            },
+            ValidationEvent::ValidationComplete { provider, result } => match provider {
+                ProviderType::Local => {
+                    self.local_provider.validation_status = result.status;
+                }
+                ProviderType::OpenRouter => {
+                    self.openrouter_provider.validation_status = result.status;
+                }
+            },
         }
     }
 }
@@ -1753,38 +1758,46 @@ mod tests {
         assert_eq!(unmask_for_editing(&masked, original), original);
         assert_eq!(unmask_for_editing("unmasked", "original"), "unmasked");
     }
-    
+
     #[tokio::test]
     async fn test_async_validation_service() {
         let (tx, mut rx) = mpsc::unbounded_channel();
         let service = ValidationService::new(tx);
-        
+
         // Test local provider validation with unconfigured provider
         let mut local_config = ProviderConfig::new_local();
         local_config.endpoint_url = None; // Remove endpoint to test unconfigured case
-        
-        service.validate_provider(ProviderType::Local, &local_config).await;
-        
+
+        service
+            .validate_provider(ProviderType::Local, &local_config)
+            .await;
+
         // Should receive start and complete events
         let start_event = rx.recv().await.unwrap();
         let complete_event = rx.recv().await.unwrap();
-        
+
         match start_event {
-            ValidationEvent::StartValidation(ProviderType::Local) => {},
+            ValidationEvent::StartValidation(ProviderType::Local) => {}
             _ => panic!("Expected StartValidation event for Local"),
         }
-        
+
         match complete_event {
             ValidationEvent::ValidationComplete { provider, result } => {
                 assert_eq!(provider, ProviderType::Local);
                 assert_eq!(result.status, ValidationStatus::Invalid); // No endpoint configured
                 assert!(result.message.is_some());
-                assert!(result.message.as_ref().unwrap().contains("No endpoint configured"));
-            },
+                assert!(
+                    result
+                        .message
+                        .as_ref()
+                        .unwrap()
+                        .contains("No endpoint configured")
+                );
+            }
             _ => panic!("Expected ValidationComplete event"),
         }
     }
-    
+
     #[tokio::test]
     async fn test_local_provider_validation() {
         // Test invalid endpoint
@@ -1792,13 +1805,13 @@ mod tests {
         assert_eq!(result.status, ValidationStatus::Invalid);
         assert!(result.message.is_some());
         assert!(result.response_time.is_none());
-        
+
         // Test malformed URL
         let result = validate_local_provider("not-a-url").await;
         assert_eq!(result.status, ValidationStatus::Invalid);
         assert!(result.message.is_some());
     }
-    
+
     #[tokio::test]
     async fn test_openrouter_provider_validation() {
         // Test with a clearly invalid API key format that should fail
@@ -1806,87 +1819,109 @@ mod tests {
         // Note: We don't assert the status here since OpenRouter might accept various formats
         // Instead, we just check that we get a response
         assert!(result.message.is_some());
-        
+
         // Test empty key through the service
         let (tx, mut rx) = mpsc::unbounded_channel();
         let service = ValidationService::new(tx);
         let mut config = ProviderConfig::new_openrouter();
         config.api_key = None; // No API key configured
-        
-        service.validate_provider(ProviderType::OpenRouter, &config).await;
-        
+
+        service
+            .validate_provider(ProviderType::OpenRouter, &config)
+            .await;
+
         // Skip start event
         let _ = rx.recv().await.unwrap();
-        
+
         // Check complete event
         let complete_event = rx.recv().await.unwrap();
         match complete_event {
             ValidationEvent::ValidationComplete { provider, result } => {
                 assert_eq!(provider, ProviderType::OpenRouter);
                 assert_eq!(result.status, ValidationStatus::Invalid);
-                assert!(result.message.as_ref().unwrap().contains("No API key configured"));
-            },
+                assert!(
+                    result
+                        .message
+                        .as_ref()
+                        .unwrap()
+                        .contains("No API key configured")
+                );
+            }
             _ => panic!("Expected ValidationComplete event"),
         }
     }
-    
+
     #[tokio::test]
     async fn test_settings_validation_integration() {
         let mut settings = Settings::new();
         let (tx, mut rx) = mpsc::unbounded_channel();
-        
+
         // Configure providers
         settings.local_provider.endpoint_url = Some("http://localhost:11434".to_string());
         settings.openrouter_provider.api_key = Some("sk-or-v1-test".to_string());
-        
+
         // Test validate_all_providers
         let tasks = settings.validate_all_providers(tx.clone()).await;
         assert_eq!(tasks.len(), 2); // Both providers configured
-        
+
         // Wait for tasks to complete
         for task in tasks {
             let _ = task.await;
         }
-        
+
         // Check that validation events were sent
         let mut events_received = 0;
         while let Ok(Some(_)) = tokio::time::timeout(Duration::from_millis(100), rx.recv()).await {
             events_received += 1;
-            if events_received >= 4 { // Start + Complete for each provider
+            if events_received >= 4 {
+                // Start + Complete for each provider
                 break;
             }
         }
         assert_eq!(events_received, 4);
     }
-    
+
     #[test]
     fn test_validation_event_handling() {
         let mut settings = Settings::new();
-        
+
         // Test StartValidation event
         settings.handle_validation_event(ValidationEvent::StartValidation(ProviderType::Local));
-        assert_eq!(settings.local_provider.validation_status, ValidationStatus::Checking);
-        
-        settings.handle_validation_event(ValidationEvent::StartValidation(ProviderType::OpenRouter));
-        assert_eq!(settings.openrouter_provider.validation_status, ValidationStatus::Checking);
-        
+        assert_eq!(
+            settings.local_provider.validation_status,
+            ValidationStatus::Checking
+        );
+
+        settings
+            .handle_validation_event(ValidationEvent::StartValidation(ProviderType::OpenRouter));
+        assert_eq!(
+            settings.openrouter_provider.validation_status,
+            ValidationStatus::Checking
+        );
+
         // Test ValidationComplete event
         let result = AsyncValidationResult {
             status: ValidationStatus::Valid,
             message: Some("Success".to_string()),
             response_time: Some(Duration::from_millis(100)),
         };
-        
+
         settings.handle_validation_event(ValidationEvent::ValidationComplete {
             provider: ProviderType::Local,
             result: result.clone(),
         });
-        assert_eq!(settings.local_provider.validation_status, ValidationStatus::Valid);
-        
+        assert_eq!(
+            settings.local_provider.validation_status,
+            ValidationStatus::Valid
+        );
+
         settings.handle_validation_event(ValidationEvent::ValidationComplete {
             provider: ProviderType::OpenRouter,
             result,
         });
-        assert_eq!(settings.openrouter_provider.validation_status, ValidationStatus::Valid);
+        assert_eq!(
+            settings.openrouter_provider.validation_status,
+            ValidationStatus::Valid
+        );
     }
 }
