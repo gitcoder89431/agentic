@@ -15,7 +15,7 @@ use ratatui::{
     Frame, Terminal,
     backend::Backend,
     layout::{Alignment, Rect},
-    widgets::{Block, Borders, Paragraph, Wrap},
+    widgets::{Block, Borders, Paragraph, Wrap, Clear, List, ListItem, ListState},
 };
 use serde::{Deserialize, Serialize};
 use std::io;
@@ -28,32 +28,50 @@ pub enum InputMode {
     EditingApiKey,
 }
 
-/// OpenRouter model information
+/// OpenRouter model information (matches REAL API structure)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OpenRouterModel {
     pub id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub canonical_slug: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hugging_face_id: Option<String>,
     pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub created: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
-    pub pricing: ModelPricing,
     pub context_length: u32,
-    pub architecture: String,
-    pub prompt_parameters: Option<String>,
-    pub top_provider: ProviderInfo,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub architecture: Option<serde_json::Value>,  // Complex nested object
+    pub pricing: ModelPricing,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub top_provider: Option<ProviderInfo>,
 }
 
-/// Model pricing information
+/// Model pricing information (matches REAL API structure)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelPricing {
     pub prompt: String,
     pub completion: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub request: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub image: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub web_search: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub internal_reasoning: Option<String>,
 }
 
-/// Provider information
+/// Provider information (matches REAL API structure)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProviderInfo {
-    pub context_length: u32,
-    pub max_completion_tokens: Option<u32>,
-    pub is_moderated: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub context_length: Option<u32>,
+    pub max_completion_tokens: Option<u32>,  // Can be null!
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub is_moderated: Option<bool>,
 }
 
 /// OpenRouter API response
@@ -62,17 +80,29 @@ pub struct OpenRouterResponse {
     pub data: Vec<OpenRouterModel>,
 }
 
-/// Model selection modal state
+/// Stateful list for model selection (idiomatic ratatui pattern)
+#[derive(Debug, Clone)]
+pub struct StatefulList {
+    pub items: Vec<String>, // The 316+ model names
+    pub state: ListState,
+}
+
+impl StatefulList {
+    pub fn new(items: Vec<String>) -> Self {
+        Self {
+            items,
+            state: ListState::default(),
+        }
+    }
+}
+
+/// Model selection modal state (simplified)
 #[derive(Debug, Clone)]
 pub struct ModelSelectionState {
-    pub models: Vec<OpenRouterModel>,
-    pub free_models: Vec<OpenRouterModel>,
-    pub paid_models_by_brand: std::collections::BTreeMap<String, Vec<OpenRouterModel>>,
-    pub current_page: usize,
-    pub selected_index: usize,
+    pub models: Vec<OpenRouterModel>, // Keep for model details
+    pub model_list: StatefulList,     // Simple list for UI
     pub is_loading: bool,
     pub error_message: Option<String>,
-    pub show_free_first: bool,
 }
 
 /// Main application state and manager
@@ -102,6 +132,8 @@ pub struct App {
     model_selection_state: Option<ModelSelectionState>,
     /// Currently selected OpenRouter model
     selected_model: String,
+    /// Flag to trigger OpenRouter API fetch in main loop
+    should_fetch_openrouter_models: bool,
     /// Last known terminal size for resize detection
     last_size: Option<(u16, u16)>,
 }
@@ -131,6 +163,7 @@ impl App {
             input_mode: InputMode::Navigation,
             model_selection_state: None,
             selected_model: "meta-llama/llama-3.2-1b-instruct:free".to_string(),
+            should_fetch_openrouter_models: false,
             last_size: None,
         }
     }
@@ -155,10 +188,37 @@ impl App {
             .send()
             .await?;
 
-        let models_response: OpenRouterResponse = response.json().await?;
+        // 🔍 DEBUG: Check response headers (commented out to avoid TUI interference)
+        // let headers = response.headers();
+        // eprintln!("🔍 Response headers: {:?}", headers);
+
+        // 🔍 DEBUG: Get raw response text first to see actual structure
+        let response_text = response.text().await?;
+        // DEBUG: Don't print raw response as it interferes with TUI
+        // eprintln!("🔍 DEBUG: Raw API response length: {} chars", response_text.len());
+        // eprintln!("🔍 DEBUG: First 500 chars: {}", &response_text[..response_text.len().min(500)]);
         
-        // Clone the data to avoid move issues
-        let all_models = models_response.data.clone();
+        // ✅ SAFER PARSING with proper error handling
+        let models_response: OpenRouterResponse = match serde_json::from_str::<OpenRouterResponse>(&response_text) {
+            Ok(parsed) => {
+                // Success case - don't print to avoid TUI interference
+                // eprintln!("✅ Loaded {} models from OpenRouter", parsed.data.len());
+                parsed
+            }
+            Err(e) => {
+                // Log error without dumping raw content to avoid TUI interference
+                // eprintln!("❌ JSON parsing failed: {}", e);
+                
+                // Set error message for UI display instead of console output
+                return Err(e.into());
+            }
+        };
+        
+        // Process all models - no artificial chunking limitations
+        let all_models = models_response.data;
+        
+        // Don't print processing info to avoid TUI interference
+        // eprintln!("📊 Processing {} models from OpenRouter API", all_models.len());
         
         // Separate free and paid models
         let mut free_models = Vec::new();
@@ -186,15 +246,15 @@ impl App {
             models.sort_by(|a, b| a.name.cmp(&b.name));
         }
 
+        // Create simple list of model names for UI
+        let model_names: Vec<String> = all_models.iter().map(|m| m.name.clone()).collect();
+        let model_list = StatefulList::new(model_names);
+        
         self.model_selection_state = Some(ModelSelectionState {
             models: all_models,
-            free_models,
-            paid_models_by_brand,
-            current_page: 0,
-            selected_index: 0,
+            model_list,
             is_loading: false,
             error_message: None,
-            show_free_first: true,
         });
 
         Ok(())
@@ -202,559 +262,24 @@ impl App {
 
     /// Initialize model selection and start loading models
     pub async fn start_model_selection(&mut self) {
-                                self.model_selection_state = Some(ModelSelectionState {
-                                    is_loading: false,
-                                    models: vec![],
-                                    free_models: vec![],
-                                    paid_models_by_brand: std::collections::BTreeMap::new(),
-                                    current_page: 0,
-                                    selected_index: 0,
-                                    show_free_first: true,
-                                    error_message: None,
-                                });
-                                self.load_real_models();        // Fetch models from OpenRouter API
+        self.model_selection_state = Some(ModelSelectionState {
+            is_loading: true,  // ✅ Show loading
+            models: vec![],
+            model_list: StatefulList::new(vec![]),
+            error_message: None,
+        });
+        
+        // 🔍 DEBUG: Removed hardcoded call, ONLY use API now
+        // self.load_real_models();  // ❌ REMOVED: This was overriding API data!
+        
         if let Err(e) = self.fetch_openrouter_models().await {
             if let Some(ref mut state) = self.model_selection_state {
                 state.is_loading = false;
-                state.error_message = Some(format!("Failed to load models: {}", e));
+                state.error_message = Some(format!(
+                    "Cannot connect to OpenRouter API: {}. Please check your internet connection and try again.", 
+                    e
+                ));
             }
-        }
-    }
-
-    /// Load real OpenRouter models (comprehensive list from their API)
-    fn load_real_models(&mut self) {
-        // Real OpenRouter models - comprehensive list based on their API
-        let real_models = vec![
-            // FREE MODELS (models with :free suffix)
-            OpenRouterModel {
-                id: "meta-llama/llama-3.2-1b-instruct:free".to_string(),
-                name: "Llama 3.2 1B Instruct".to_string(),
-                description: Some("Fast and efficient for basic tasks".to_string()),
-                pricing: ModelPricing { prompt: "0".to_string(), completion: "0".to_string() },
-                context_length: 131072,
-                architecture: "llama".to_string(),
-                prompt_parameters: None,
-                top_provider: ProviderInfo {
-                    context_length: 131072,
-                    max_completion_tokens: Some(8192),
-                    is_moderated: false,
-                },
-            },
-            OpenRouterModel {
-                id: "meta-llama/llama-3.2-3b-instruct:free".to_string(),
-                name: "Llama 3.2 3B Instruct".to_string(),
-                description: Some("Balanced performance for general tasks".to_string()),
-                pricing: ModelPricing { prompt: "0".to_string(), completion: "0".to_string() },
-                context_length: 131072,
-                architecture: "llama".to_string(),
-                prompt_parameters: None,
-                top_provider: ProviderInfo {
-                    context_length: 131072,
-                    max_completion_tokens: Some(8192),
-                    is_moderated: false,
-                },
-            },
-            OpenRouterModel {
-                id: "microsoft/phi-3-mini-128k-instruct:free".to_string(),
-                name: "Phi-3 Mini 128K Instruct".to_string(),
-                description: Some("Microsoft's efficient small model".to_string()),
-                pricing: ModelPricing { prompt: "0".to_string(), completion: "0".to_string() },
-                context_length: 128000,
-                architecture: "phi".to_string(),
-                prompt_parameters: None,
-                top_provider: ProviderInfo {
-                    context_length: 128000,
-                    max_completion_tokens: Some(8192),
-                    is_moderated: false,
-                },
-            },
-            OpenRouterModel {
-                id: "qwen/qwen-2-7b-instruct:free".to_string(),
-                name: "Qwen 2 7B Instruct".to_string(),
-                description: Some("Alibaba's multilingual model".to_string()),
-                pricing: ModelPricing { prompt: "0".to_string(), completion: "0".to_string() },
-                context_length: 32768,
-                architecture: "qwen".to_string(),
-                prompt_parameters: None,
-                top_provider: ProviderInfo {
-                    context_length: 32768,
-                    max_completion_tokens: Some(8192),
-                    is_moderated: false,
-                },
-            },
-            OpenRouterModel {
-                id: "google/gemma-2-9b-it:free".to_string(),
-                name: "Gemma 2 9B IT".to_string(),
-                description: Some("Google's open model for instruction following".to_string()),
-                pricing: ModelPricing { prompt: "0".to_string(), completion: "0".to_string() },
-                context_length: 8192,
-                architecture: "gemma".to_string(),
-                prompt_parameters: None,
-                top_provider: ProviderInfo {
-                    context_length: 8192,
-                    max_completion_tokens: Some(4096),
-                    is_moderated: false,
-                },
-            },
-            OpenRouterModel {
-                id: "huggingface/zephyr-7b-beta:free".to_string(),
-                name: "Zephyr 7B Beta".to_string(),
-                description: Some("HuggingFace's conversational model".to_string()),
-                pricing: ModelPricing { prompt: "0".to_string(), completion: "0".to_string() },
-                context_length: 32768,
-                architecture: "mistral".to_string(),
-                prompt_parameters: None,
-                top_provider: ProviderInfo {
-                    context_length: 32768,
-                    max_completion_tokens: Some(8192),
-                    is_moderated: false,
-                },
-            },
-
-            // OPENAI MODELS
-            OpenRouterModel {
-                id: "openai/gpt-4o".to_string(),
-                name: "GPT-4o".to_string(),
-                description: Some("OpenAI's most advanced multimodal model".to_string()),
-                pricing: ModelPricing { prompt: "0.005".to_string(), completion: "0.015".to_string() },
-                context_length: 128000,
-                architecture: "gpt-4".to_string(),
-                prompt_parameters: None,
-                top_provider: ProviderInfo {
-                    context_length: 128000,
-                    max_completion_tokens: Some(16384),
-                    is_moderated: true,
-                },
-            },
-            OpenRouterModel {
-                id: "openai/gpt-4o-mini".to_string(),
-                name: "GPT-4o Mini".to_string(),
-                description: Some("Faster and cheaper version of GPT-4o".to_string()),
-                pricing: ModelPricing { prompt: "0.00015".to_string(), completion: "0.0006".to_string() },
-                context_length: 128000,
-                architecture: "gpt-4".to_string(),
-                prompt_parameters: None,
-                top_provider: ProviderInfo {
-                    context_length: 128000,
-                    max_completion_tokens: Some(16384),
-                    is_moderated: true,
-                },
-            },
-            OpenRouterModel {
-                id: "openai/gpt-4-turbo".to_string(),
-                name: "GPT-4 Turbo".to_string(),
-                description: Some("OpenAI's optimized GPT-4 model".to_string()),
-                pricing: ModelPricing { prompt: "0.01".to_string(), completion: "0.03".to_string() },
-                context_length: 128000,
-                architecture: "gpt-4".to_string(),
-                prompt_parameters: None,
-                top_provider: ProviderInfo {
-                    context_length: 128000,
-                    max_completion_tokens: Some(4096),
-                    is_moderated: true,
-                },
-            },
-            OpenRouterModel {
-                id: "openai/gpt-3.5-turbo".to_string(),
-                name: "GPT-3.5 Turbo".to_string(),
-                description: Some("OpenAI's efficient conversational model".to_string()),
-                pricing: ModelPricing { prompt: "0.0005".to_string(), completion: "0.0015".to_string() },
-                context_length: 16385,
-                architecture: "gpt-3.5".to_string(),
-                prompt_parameters: None,
-                top_provider: ProviderInfo {
-                    context_length: 16385,
-                    max_completion_tokens: Some(4096),
-                    is_moderated: true,
-                },
-            },
-
-            // ANTHROPIC MODELS
-            OpenRouterModel {
-                id: "anthropic/claude-3.5-sonnet".to_string(),
-                name: "Claude 3.5 Sonnet".to_string(),
-                description: Some("Anthropic's most intelligent model".to_string()),
-                pricing: ModelPricing { prompt: "0.003".to_string(), completion: "0.015".to_string() },
-                context_length: 200000,
-                architecture: "claude".to_string(),
-                prompt_parameters: None,
-                top_provider: ProviderInfo {
-                    context_length: 200000,
-                    max_completion_tokens: Some(8192),
-                    is_moderated: false,
-                },
-            },
-            OpenRouterModel {
-                id: "anthropic/claude-3-haiku".to_string(),
-                name: "Claude 3 Haiku".to_string(),
-                description: Some("Anthropic's fastest model".to_string()),
-                pricing: ModelPricing { prompt: "0.00025".to_string(), completion: "0.00125".to_string() },
-                context_length: 200000,
-                architecture: "claude".to_string(),
-                prompt_parameters: None,
-                top_provider: ProviderInfo {
-                    context_length: 200000,
-                    max_completion_tokens: Some(4096),
-                    is_moderated: false,
-                },
-            },
-            OpenRouterModel {
-                id: "anthropic/claude-3-opus".to_string(),
-                name: "Claude 3 Opus".to_string(),
-                description: Some("Anthropic's most powerful model".to_string()),
-                pricing: ModelPricing { prompt: "0.015".to_string(), completion: "0.075".to_string() },
-                context_length: 200000,
-                architecture: "claude".to_string(),
-                prompt_parameters: None,
-                top_provider: ProviderInfo {
-                    context_length: 200000,
-                    max_completion_tokens: Some(4096),
-                    is_moderated: false,
-                },
-            },
-
-            // GOOGLE MODELS  
-            OpenRouterModel {
-                id: "google/gemini-pro-1.5".to_string(),
-                name: "Gemini Pro 1.5".to_string(),
-                description: Some("Google's advanced multimodal model".to_string()),
-                pricing: ModelPricing { prompt: "0.0035".to_string(), completion: "0.0105".to_string() },
-                context_length: 2097152,
-                architecture: "gemini".to_string(),
-                prompt_parameters: None,
-                top_provider: ProviderInfo {
-                    context_length: 2097152,
-                    max_completion_tokens: Some(8192),
-                    is_moderated: true,
-                },
-            },
-            OpenRouterModel {
-                id: "google/gemini-flash-1.5".to_string(),
-                name: "Gemini Flash 1.5".to_string(),
-                description: Some("Google's faster Gemini model".to_string()),
-                pricing: ModelPricing { prompt: "0.000075".to_string(), completion: "0.0003".to_string() },
-                context_length: 1048576,
-                architecture: "gemini".to_string(),
-                prompt_parameters: None,
-                top_provider: ProviderInfo {
-                    context_length: 1048576,
-                    max_completion_tokens: Some(8192),
-                    is_moderated: true,
-                },
-            },
-
-            // META MODELS
-            OpenRouterModel {
-                id: "meta-llama/llama-3.1-405b-instruct".to_string(),
-                name: "Llama 3.1 405B Instruct".to_string(),
-                description: Some("Meta's largest and most capable model".to_string()),
-                pricing: ModelPricing { prompt: "0.005".to_string(), completion: "0.015".to_string() },
-                context_length: 131072,
-                architecture: "llama".to_string(),
-                prompt_parameters: None,
-                top_provider: ProviderInfo {
-                    context_length: 131072,
-                    max_completion_tokens: Some(16384),
-                    is_moderated: false,
-                },
-            },
-            OpenRouterModel {
-                id: "meta-llama/llama-3.1-70b-instruct".to_string(),
-                name: "Llama 3.1 70B Instruct".to_string(),
-                description: Some("Meta's high-performance model".to_string()),
-                pricing: ModelPricing { prompt: "0.00088".to_string(), completion: "0.00088".to_string() },
-                context_length: 131072,
-                architecture: "llama".to_string(),
-                prompt_parameters: None,
-                top_provider: ProviderInfo {
-                    context_length: 131072,
-                    max_completion_tokens: Some(16384),
-                    is_moderated: false,
-                },
-            },
-            OpenRouterModel {
-                id: "meta-llama/llama-3.1-8b-instruct".to_string(),
-                name: "Llama 3.1 8B Instruct".to_string(),
-                description: Some("Meta's efficient mid-size model".to_string()),
-                pricing: ModelPricing { prompt: "0.00018".to_string(), completion: "0.00018".to_string() },
-                context_length: 131072,
-                architecture: "llama".to_string(),
-                prompt_parameters: None,
-                top_provider: ProviderInfo {
-                    context_length: 131072,
-                    max_completion_tokens: Some(16384),
-                    is_moderated: false,
-                },
-            },
-
-            // MISTRAL MODELS
-            OpenRouterModel {
-                id: "mistralai/mistral-large".to_string(),
-                name: "Mistral Large".to_string(),
-                description: Some("Mistral's flagship model".to_string()),
-                pricing: ModelPricing { prompt: "0.008".to_string(), completion: "0.024".to_string() },
-                context_length: 32768,
-                architecture: "mistral".to_string(),
-                prompt_parameters: None,
-                top_provider: ProviderInfo {
-                    context_length: 32768,
-                    max_completion_tokens: Some(16384),
-                    is_moderated: false,
-                },
-            },
-            OpenRouterModel {
-                id: "mistralai/mistral-medium".to_string(),
-                name: "Mistral Medium".to_string(),
-                description: Some("Mistral's balanced model".to_string()),
-                pricing: ModelPricing { prompt: "0.0027".to_string(), completion: "0.0081".to_string() },
-                context_length: 32768,
-                architecture: "mistral".to_string(),
-                prompt_parameters: None,
-                top_provider: ProviderInfo {
-                    context_length: 32768,
-                    max_completion_tokens: Some(16384),
-                    is_moderated: false,
-                },
-            },
-            OpenRouterModel {
-                id: "mistralai/mistral-7b-instruct".to_string(),
-                name: "Mistral 7B Instruct".to_string(),
-                description: Some("Mistral's efficient 7B model".to_string()),
-                pricing: ModelPricing { prompt: "0.00013".to_string(), completion: "0.00013".to_string() },
-                context_length: 32768,
-                architecture: "mistral".to_string(),
-                prompt_parameters: None,
-                top_provider: ProviderInfo {
-                    context_length: 32768,
-                    max_completion_tokens: Some(16384),
-                    is_moderated: false,
-                },
-            },
-
-            // COHERE MODELS
-            OpenRouterModel {
-                id: "cohere/command-r-plus".to_string(),
-                name: "Command R+".to_string(),
-                description: Some("Cohere's most powerful model".to_string()),
-                pricing: ModelPricing { prompt: "0.003".to_string(), completion: "0.015".to_string() },
-                context_length: 128000,
-                architecture: "command".to_string(),
-                prompt_parameters: None,
-                top_provider: ProviderInfo {
-                    context_length: 128000,
-                    max_completion_tokens: Some(4096),
-                    is_moderated: false,
-                },
-            },
-            OpenRouterModel {
-                id: "cohere/command-r".to_string(),
-                name: "Command R".to_string(),
-                description: Some("Cohere's retrieval-augmented model".to_string()),
-                pricing: ModelPricing { prompt: "0.0005".to_string(), completion: "0.0015".to_string() },
-                context_length: 128000,
-                architecture: "command".to_string(),
-                prompt_parameters: None,
-                top_provider: ProviderInfo {
-                    context_length: 128000,
-                    max_completion_tokens: Some(4096),
-                    is_moderated: false,
-                },
-            },
-
-            // DEEPSEEK MODELS
-            OpenRouterModel {
-                id: "deepseek/deepseek-coder".to_string(),
-                name: "DeepSeek Coder".to_string(),
-                description: Some("Specialized coding model".to_string()),
-                pricing: ModelPricing { prompt: "0.00014".to_string(), completion: "0.00028".to_string() },
-                context_length: 16384,
-                architecture: "deepseek".to_string(),
-                prompt_parameters: None,
-                top_provider: ProviderInfo {
-                    context_length: 16384,
-                    max_completion_tokens: Some(4096),
-                    is_moderated: false,
-                },
-            },
-            OpenRouterModel {
-                id: "deepseek/deepseek-chat".to_string(),
-                name: "DeepSeek Chat".to_string(),
-                description: Some("DeepSeek's general purpose model".to_string()),
-                pricing: ModelPricing { prompt: "0.00014".to_string(), completion: "0.00028".to_string() },
-                context_length: 32768,
-                architecture: "deepseek".to_string(),
-                prompt_parameters: None,
-                top_provider: ProviderInfo {
-                    context_length: 32768,
-                    max_completion_tokens: Some(4096),
-                    is_moderated: false,
-                },
-            },
-
-            // X.AI MODELS
-            OpenRouterModel {
-                id: "x-ai/grok-beta".to_string(),
-                name: "Grok Beta".to_string(),
-                description: Some("X.AI's conversational model".to_string()),
-                pricing: ModelPricing { prompt: "0.005".to_string(), completion: "0.015".to_string() },
-                context_length: 131072,
-                architecture: "grok".to_string(),
-                prompt_parameters: None,
-                top_provider: ProviderInfo {
-                    context_length: 131072,
-                    max_completion_tokens: Some(8192),
-                    is_moderated: false,
-                },
-            },
-
-            // PERPLEXITY MODELS
-            OpenRouterModel {
-                id: "perplexity/llama-3.1-sonar-large-128k-online".to_string(),
-                name: "Llama 3.1 Sonar Large 128k Online".to_string(),
-                description: Some("Perplexity's search-enhanced model".to_string()),
-                pricing: ModelPricing { prompt: "0.001".to_string(), completion: "0.001".to_string() },
-                context_length: 127072,
-                architecture: "llama".to_string(),
-                prompt_parameters: None,
-                top_provider: ProviderInfo {
-                    context_length: 127072,
-                    max_completion_tokens: Some(8192),
-                    is_moderated: false,
-                },
-            },
-            OpenRouterModel {
-                id: "perplexity/llama-3.1-sonar-small-128k-online".to_string(),
-                name: "Llama 3.1 Sonar Small 128k Online".to_string(),
-                description: Some("Perplexity's efficient search-enhanced model".to_string()),
-                pricing: ModelPricing { prompt: "0.0002".to_string(), completion: "0.0002".to_string() },
-                context_length: 127072,
-                architecture: "llama".to_string(),
-                prompt_parameters: None,
-                top_provider: ProviderInfo {
-                    context_length: 127072,
-                    max_completion_tokens: Some(8192),
-                    is_moderated: false,
-                },
-            },
-
-            // DATABRICKS MODELS
-            OpenRouterModel {
-                id: "databricks/dbrx-instruct".to_string(),
-                name: "DBRX Instruct".to_string(),
-                description: Some("Databricks' general-purpose model".to_string()),
-                pricing: ModelPricing { prompt: "0.00075".to_string(), completion: "0.00225".to_string() },
-                context_length: 32768,
-                architecture: "dbrx".to_string(),
-                prompt_parameters: None,
-                top_provider: ProviderInfo {
-                    context_length: 32768,
-                    max_completion_tokens: Some(8192),
-                    is_moderated: false,
-                },
-            },
-
-            // 01.AI MODELS
-            OpenRouterModel {
-                id: "01-ai/yi-large".to_string(),
-                name: "Yi Large".to_string(),
-                description: Some("01.AI's large-scale model".to_string()),
-                pricing: ModelPricing { prompt: "0.003".to_string(), completion: "0.003".to_string() },
-                context_length: 32768,
-                architecture: "yi".to_string(),
-                prompt_parameters: None,
-                top_provider: ProviderInfo {
-                    context_length: 32768,
-                    max_completion_tokens: Some(8192),
-                    is_moderated: false,
-                },
-            },
-
-            // NOUS RESEARCH MODELS
-            OpenRouterModel {
-                id: "nousresearch/nous-hermes-2-mixtral-8x7b-dpo".to_string(),
-                name: "Nous Hermes 2 Mixtral 8x7B DPO".to_string(),
-                description: Some("Nous Research's fine-tuned model".to_string()),
-                pricing: ModelPricing { prompt: "0.00027".to_string(), completion: "0.00027".to_string() },
-                context_length: 32768,
-                architecture: "mixtral".to_string(),
-                prompt_parameters: None,
-                top_provider: ProviderInfo {
-                    context_length: 32768,
-                    max_completion_tokens: Some(8192),
-                    is_moderated: false,
-                },
-            },
-
-            // NVIDIA MODELS
-            OpenRouterModel {
-                id: "nvidia/nemotron-4-340b-instruct".to_string(),
-                name: "Nemotron-4 340B Instruct".to_string(),
-                description: Some("NVIDIA's large language model".to_string()),
-                pricing: ModelPricing { prompt: "0.004".to_string(), completion: "0.004".to_string() },
-                context_length: 4096,
-                architecture: "nemotron".to_string(),
-                prompt_parameters: None,
-                top_provider: ProviderInfo {
-                    context_length: 4096,
-                    max_completion_tokens: Some(1024),
-                    is_moderated: false,
-                },
-            },
-
-            // AIMLAPI MODELS  
-            OpenRouterModel {
-                id: "aimlapi/llama-3.1-405b-instruct".to_string(),
-                name: "Llama 3.1 405B Instruct (AIMLAPI)".to_string(),
-                description: Some("AIML API hosted Llama model".to_string()),
-                pricing: ModelPricing { prompt: "0.002".to_string(), completion: "0.002".to_string() },
-                context_length: 131072,
-                architecture: "llama".to_string(),
-                prompt_parameters: None,
-                top_provider: ProviderInfo {
-                    context_length: 131072,
-                    max_completion_tokens: Some(16384),
-                    is_moderated: false,
-                },
-            },
-
-            // OPENROUTER EXCLUSIVE MODELS
-            OpenRouterModel {
-                id: "openrouter/auto".to_string(),
-                name: "Auto (Recommended)".to_string(),
-                description: Some("OpenRouter automatically selects the best model for your prompt".to_string()),
-                pricing: ModelPricing { prompt: "Variable".to_string(), completion: "Variable".to_string() },
-                context_length: 200000,
-                architecture: "auto".to_string(),
-                prompt_parameters: None,
-                top_provider: ProviderInfo {
-                    context_length: 200000,
-                    max_completion_tokens: Some(16384),
-                    is_moderated: false,
-                },
-            },
-        ];
-
-        // Process and categorize the models
-        if let Some(ref mut state) = self.model_selection_state {
-            state.models = real_models;
-            
-            // Separate free and paid models
-            for model in &state.models {
-                if model.id.ends_with(":free") {
-                    state.free_models.push(model.clone());
-                } else {
-                    // Group paid models by brand (first part before the slash)
-                    if let Some(slash_pos) = model.id.find('/') {
-                        let brand = model.id[..slash_pos].to_string();
-                        state.paid_models_by_brand
-                            .entry(brand)
-                            .or_insert_with(Vec::new)
-                            .push(model.clone());
-                    }
-                }
-            }
-            
-            state.is_loading = false;
         }
     }
 
@@ -797,6 +322,25 @@ impl App {
                     // Only handle events that aren't None
                     if event != AppEvent::None {
                         self.handle_event(event);
+
+                        // 🔍 Check if we need to fetch OpenRouter models after event handling
+                        if self.should_fetch_openrouter_models {
+                            self.should_fetch_openrouter_models = false;
+                            // DEBUG: Comment out to avoid TUI interference
+                            // eprintln!("🚀 Triggered OpenRouter API call from main loop!");
+                            
+                            if let Err(e) = self.fetch_openrouter_models().await {
+                                // Only log errors, don't interfere with TUI
+                                // eprintln!("❌ OpenRouter API failed: {}", e);
+                                if let Some(ref mut state) = self.model_selection_state {
+                                    state.is_loading = false;
+                                    state.error_message = Some(format!(
+                                        "Cannot connect to OpenRouter API: {}. Please check your internet connection and try again.", 
+                                        e
+                                    ));
+                                }
+                            }
+                        }
 
                         // Only redraw after handling a real event
                         terminal.draw(|f| self.draw(f))?;
@@ -887,15 +431,7 @@ impl App {
                     }
                     AppState::ModelSelection => {
                         if let Some(ref mut state) = self.model_selection_state {
-                            if state.selected_index > 0 {
-                                state.selected_index -= 1;
-                                // Check if we need to go to previous page
-                                if state.selected_index < state.current_page * 8 {
-                                    if state.current_page > 0 {
-                                        state.current_page -= 1;
-                                    }
-                                }
-                            }
+                            state.model_list.state.select_previous();
                         }
                     }
                     _ => {}
@@ -920,24 +456,7 @@ impl App {
                     }
                     AppState::ModelSelection => {
                         if let Some(ref mut state) = self.model_selection_state {
-                            // Calculate available models for current category
-                            let max_models = if state.show_free_first && !state.free_models.is_empty() {
-                                state.free_models.len()
-                            } else {
-                                let mut total_paid = 0;
-                                for models in state.paid_models_by_brand.values() {
-                                    total_paid += models.len();
-                                }
-                                total_paid
-                            };
-                            
-                            if state.selected_index + 1 < max_models {
-                                state.selected_index += 1;
-                                // Check if we need to go to next page
-                                if state.selected_index >= (state.current_page + 1) * 8 {
-                                    state.current_page += 1;
-                                }
-                            }
+                            state.model_list.state.select_next();
                         }
                     }
                     _ => {}
@@ -954,14 +473,8 @@ impl App {
                         }
                     }
                     AppState::ModelSelection => {
-                        if let Some(ref mut state) = self.model_selection_state {
-                            // Switch to free models (if we have them)
-                            if !state.free_models.is_empty() {
-                                state.show_free_first = true;
-                                state.current_page = 0;
-                                state.selected_index = 0;
-                            }
-                        }
+                        // Left/Right navigation not needed with unified list
+                        // All models are in one scrollable list now
                     }
                     _ => {}
                 }
@@ -976,12 +489,32 @@ impl App {
                         }
                     }
                     AppState::ModelSelection => {
+                        // Left/Right navigation not needed with unified list
+                        // All models are in one scrollable list now
+                    }
+                    _ => {}
+                }
+            }
+            AppEvent::PagePrevious => {
+                match self.state {
+                    AppState::ModelSelection => {
                         if let Some(ref mut state) = self.model_selection_state {
-                            // Switch to paid models
-                            if !state.paid_models_by_brand.is_empty() {
-                                state.show_free_first = false;
-                                state.current_page = 0;
-                                state.selected_index = 0;
+                            // Use built-in scroll_up_by for page-like navigation
+                            for _ in 0..10 { // Jump by 10 items
+                                state.model_list.state.select_previous();
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            AppEvent::PageNext => {
+                match self.state {
+                    AppState::ModelSelection => {
+                        if let Some(ref mut state) = self.model_selection_state {
+                            // Use built-in scroll_down_by for page-like navigation
+                            for _ in 0..10 { // Jump by 10 items
+                                state.model_list.state.select_next();
                             }
                         }
                     }
@@ -1055,15 +588,14 @@ impl App {
                                 // Initialize with loading state
                                 self.model_selection_state = Some(ModelSelectionState {
                                     models: Vec::new(),
-                                    free_models: Vec::new(),
-                                    paid_models_by_brand: std::collections::BTreeMap::new(),
-                                    current_page: 0,
-                                    selected_index: 0,
+                                    model_list: StatefulList::new(vec![]),
                                     is_loading: true,
                                     error_message: None,
-                                    show_free_first: true,
                                 });
                                 self.state = AppState::ModelSelection;
+                                
+                                // 🔍 Set flag to trigger API call in main loop
+                                self.should_fetch_openrouter_models = true;
                                 
                                 // Start loading real models from OpenRouter API
                                 // For now we'll handle this in the main loop since we can't easily do async here
@@ -1081,17 +613,16 @@ impl App {
                     }
                     AppState::ModelSelection => {
                         if let Some(ref state) = self.model_selection_state {
-                            let models_for_page = self.get_models_for_current_page(state);
-                            let page_offset = state.current_page * 8;
-                            let local_index = state.selected_index - page_offset;
-                            
-                            if local_index < models_for_page.len() {
-                                let selected_model = models_for_page[local_index];
-                                self.selected_model = selected_model.id.clone();
-                                
-                                // Go back to menu with selected model
-                                self.state = AppState::Menu;
-                                self.model_selection_state = None;
+                            // Get selected index from ListState
+                            if let Some(selected_idx) = state.model_list.state.selected() {
+                                if selected_idx < state.models.len() {
+                                    let selected_model = &state.models[selected_idx];
+                                    self.selected_model = selected_model.id.clone();
+                                    
+                                    // Go back to menu with selected model
+                                    self.state = AppState::Menu;
+                                    self.model_selection_state = None;
+                                }
                             }
                         }
                     }
@@ -1137,20 +668,14 @@ impl App {
                                         // Initialize with loading state
                                         self.model_selection_state = Some(ModelSelectionState {
                                             models: Vec::new(),
-                                            free_models: Vec::new(),
-                                            paid_models_by_brand: std::collections::BTreeMap::new(),
-                                            current_page: 0,
-                                            selected_index: 0,
-                                            is_loading: false,
+                                            model_list: StatefulList::new(vec![]),
+                                            is_loading: true,  // ✅ Show loading initially
                                             error_message: None,
-                                            show_free_first: true,
                                         });
                                         self.state = AppState::ModelSelection;
-                                        self.load_real_models();
                                         
-                                        // Start loading real models from OpenRouter API
-                                        // For now we'll handle this in the main loop since we can't easily do async here
-                                        // The loading state will be shown until we fetch the models
+                                        // 🔍 Set flag to trigger API call in main loop instead of hardcoded models
+                                        self.should_fetch_openrouter_models = true;
                                     }
                                     4 => {
                                         // Theme - no action needed, use left/right to change
@@ -1687,9 +1212,9 @@ impl App {
             widgets::Clear,
         };
 
-        // Create modal area - same width as settings modal, taller for model list
+        // Create modal area - same width as settings modal, much taller for 20 models
         let modal_width = 70;
-        let modal_height = 16; // Taller than settings modal (14) to fit 8 models + header/footer
+        let modal_height = 25; // Tall enough for 20 models + header/footer (was 16 for 8 models)
         let modal_area = ratatui::layout::Rect {
             x: (size.width.saturating_sub(modal_width)) / 2,
             y: (size.height.saturating_sub(modal_height)) / 2,
@@ -1702,17 +1227,12 @@ impl App {
 
         // Create footer text for the modal
         let footer_text = if let Some(ref state) = self.model_selection_state {
-            let total_models = if state.show_free_first && !state.free_models.is_empty() {
-                state.free_models.len()
-            } else {
-                state.paid_models_by_brand.values().map(|v| v.len()).sum()
-            };
-            
-            let total_pages = (total_models + 7) / 8; // Round up
+            let total_models = state.models.len();
+            let current_selection = state.model_list.state.selected().map(|i| i + 1).unwrap_or(1);
             format!(
-                " Page {}/{} • ↑↓ Navigate • ←→ Category • Enter Select • Esc Back ",
-                state.current_page + 1,
-                total_pages.max(1)
+                " {} of {} models • ↑↓ Navigate • PgUp/PgDn Jump • Enter Select • Esc Back ",
+                current_selection,
+                total_models
             )
         } else {
             " Initializing... ".to_string()
@@ -1740,8 +1260,9 @@ impl App {
                     .wrap(Wrap { trim: true });
                 frame.render_widget(loading_paragraph, inner);
             } else if let Some(ref error) = state.error_message {
-                // Show error message
-                let error_paragraph = Paragraph::new(format!("Error: {}", error))
+                // Show error message with guidance
+                let error_text = format!("{}\n\nPress ESC to go back and check your network connection.\nOpenRouter models require internet access.", error);
+                let error_paragraph = Paragraph::new(error_text)
                     .style(Style::default().fg(self.theme.colors().warning))  // Use warning color instead of error
                     .alignment(Alignment::Center)
                     .wrap(Wrap { trim: true });
@@ -1762,142 +1283,36 @@ impl App {
         frame.render_widget(modal_block, modal_area);
     }
 
-    /// Render the actual model list with pagination and categories
+    /// Render the model list using idiomatic ratatui StatefulList pattern
     fn render_model_list(&self, frame: &mut Frame, area: ratatui::layout::Rect, state: &ModelSelectionState) {
         use ratatui::{
-            layout::{Constraint, Direction, Layout},
             style::{Modifier, Style},
-            text::{Line, Span},
+            widgets::{List, ListItem},
         };
 
-        // Create layout: just models (no header needed)
-        let chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Min(8),    // Models area - use all available space
-            ])
-            .split(area);
+        // Create list items from our model names
+        let list_items: Vec<ListItem> = state
+            .model_list
+            .items
+            .iter()
+            .map(|model_name| ListItem::new(model_name.as_str()))
+            .collect();
 
-        // Models area - single column, 8 models per page
-        let models_area = chunks[0];
+        // Create the List widget with highlighting
+        let list_widget = List::new(list_items)
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title("OpenRouter Models")
+                    .border_style(self.theme.ratatui_style(Element::Border))
+            )
+            .highlight_style(Style::default().add_modifier(Modifier::BOLD))
+            .highlight_symbol("> ");
 
-        // Get models for current page
-        let models_to_show = self.get_models_for_current_page(state);
-        
-        // Render single column with up to 8 models
-        self.render_model_column_single(frame, models_area, &models_to_show[0..8.min(models_to_show.len())], state);
+        // Render with stateful widget - ratatui handles everything!
+        frame.render_stateful_widget(list_widget, area, &mut state.model_list.state.clone());
     }
 
-    /// Get models for the current page based on category and pagination
-    fn get_models_for_current_page<'a>(&self, state: &'a ModelSelectionState) -> Vec<&'a OpenRouterModel> {
-        if state.show_free_first && !state.free_models.is_empty() {
-            // Show free models
-            let start = state.current_page * 8;
-            state.free_models.iter().skip(start).take(8).collect()
-        } else {
-            // Show paid models (flatten all brands)
-            let mut all_paid: Vec<&OpenRouterModel> = Vec::new();
-            for models in state.paid_models_by_brand.values() {
-                all_paid.extend(models.iter());
-            }
-            let start = state.current_page * 8;
-            all_paid.into_iter().skip(start).take(8).collect()
-        }
-    }
-
-    /// Render a column of models (4 models max)
-    fn render_model_column(&self, frame: &mut Frame, area: ratatui::layout::Rect, models: &[&OpenRouterModel], state: &ModelSelectionState, column_offset: usize) {
-        use ratatui::{
-            layout::{Constraint, Direction, Layout},
-            style::{Modifier, Style},
-        };
-
-        let rows = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Length(2), // Row 1
-                Constraint::Length(2), // Row 2  
-                Constraint::Length(2), // Row 3
-                Constraint::Length(2), // Row 4
-            ])
-            .split(area);
-
-        for (i, model) in models.iter().enumerate() {
-            let global_index = column_offset + i;
-            let is_selected = global_index == state.selected_index;
-            
-            // Format model name (truncate if too long)
-            let display_name = if model.name.len() > 30 {
-                format!("{}...", &model.name[..27])
-            } else {
-                model.name.clone()
-            };
-
-            let style = if is_selected {
-                Style::default()
-                    .fg(self.theme.fg_color(crate::theme::Element::Accent))
-                    .bg(self.theme.bg_color(crate::theme::Element::Background))
-                    .add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
-                    .underline_color(self.theme.fg_color(crate::theme::Element::Border))
-            } else {
-                Style::default()
-                    .fg(self.theme.fg_color(crate::theme::Element::Text))
-                    .bg(self.theme.bg_color(crate::theme::Element::Background))
-            };
-
-            let paragraph = Paragraph::new(display_name)
-                .style(style)
-                .wrap(Wrap { trim: true });
-
-            if i < rows.len() {
-                frame.render_widget(paragraph, rows[i]);
-            }
-        }
-    }
-
-    /// Render a single column of models (8 models max)
-    fn render_model_column_single(&self, frame: &mut Frame, area: ratatui::layout::Rect, models: &[&OpenRouterModel], state: &ModelSelectionState) {
-        use ratatui::{
-            layout::{Constraint, Direction, Layout},
-            style::{Modifier, Style},
-        };
-
-        let rows = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints(vec![Constraint::Length(1); models.len()])
-            .split(area);
-
-        for (i, model) in models.iter().enumerate() {
-            let is_selected = i == state.selected_index;
-            
-            // Format model name - add emoji based on free/paid status
-            let emoji = if model.id.ends_with(":free") {
-                "🆓 " // Free emoji
-            } else {
-                "💰 " // Paid emoji
-            };
-            let display_text = format!("{}{}", emoji, model.id);
-
-            let style = if is_selected {
-                Style::default()
-                    .fg(self.theme.fg_color(crate::theme::Element::Accent))
-                    .bg(self.theme.bg_color(crate::theme::Element::Background))
-                    .add_modifier(Modifier::BOLD)
-            } else {
-                Style::default()
-                    .fg(self.theme.fg_color(crate::theme::Element::Text))
-                    .bg(self.theme.bg_color(crate::theme::Element::Background))
-            };
-
-            let paragraph = Paragraph::new(display_text)
-                .style(style)
-                .wrap(Wrap { trim: true });
-
-            if i < rows.len() {
-                frame.render_widget(paragraph, rows[i]);
-            }
-        }
-    }
 
     /// Render the footer section with token counters
     fn render_footer(&self, frame: &mut Frame, area: ratatui::layout::Rect) {

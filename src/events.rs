@@ -26,6 +26,10 @@ pub enum AppEvent {
     NavigateLeft,
     /// Navigate right (for theme switching)
     NavigateRight,
+    /// Navigate to previous page
+    PagePrevious,
+    /// Navigate to next page
+    PageNext,
     /// Select current item in settings modal
     Select,
     /// Start the AI orchestration application (Enter key)
@@ -78,6 +82,8 @@ impl EventHandler {
                         KeyCode::Down | KeyCode::Char('j') => Ok(AppEvent::NavigateDown),
                         KeyCode::Left | KeyCode::Char('h') => Ok(AppEvent::NavigateLeft),
                         KeyCode::Right | KeyCode::Char('l') => Ok(AppEvent::NavigateRight),
+                        KeyCode::PageUp | KeyCode::Char('[') => Ok(AppEvent::PagePrevious),
+                        KeyCode::PageDown | KeyCode::Char(']') => Ok(AppEvent::PageNext),
                         KeyCode::Enter => {
                             // Enter can be either StartApplication or Select depending on context
                             // We'll let the App decide which one to use based on state
