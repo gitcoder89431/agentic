@@ -53,7 +53,7 @@ impl EventHandler {
                     match key_event.code {
                         KeyCode::Char('q') => Ok(AppEvent::Quit),
                         KeyCode::Esc => Ok(AppEvent::CloseSettings),
-                        KeyCode::Char('s') | KeyCode::Char('S') => Ok(AppEvent::OpenSettings),
+                        KeyCode::Char(',') | KeyCode::Char('s') | KeyCode::Char('S') => Ok(AppEvent::OpenSettings),
                         KeyCode::Up | KeyCode::Char('k') => Ok(AppEvent::NavigateUp),
                         KeyCode::Down | KeyCode::Char('j') => Ok(AppEvent::NavigateDown),
                         KeyCode::Enter | KeyCode::Char(' ') => Ok(AppEvent::Select),
@@ -87,6 +87,8 @@ pub enum AppState {
     Main,
     /// Settings modal active
     Settings,
+    /// Waiting for provider configuration - no valid providers available
+    WaitingForConfig,
     /// Application is shutting down gracefully
     Quitting,
     /// Application encountered an error
