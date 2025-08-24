@@ -8,12 +8,11 @@
 //! - Settings action handling with immediate theme application
 
 use agentic::{
-    events::{AppEvent, AppState, EventHandler},
-    settings::{Settings, SettingsAction, SettingsManager},
+    events::{AppEvent, AppState},
+    settings::SettingsAction,
     theme::{Theme, ThemeVariant},
     ui::app::App,
 };
-use std::time::Duration;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔄 Issue #19 Demo: App State Machine Extension for Settings");
@@ -46,14 +45,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("3. Testing event handling...");
 
     // Simulate OpenSettings event
-    let open_event = AppEvent::OpenSettings;
+    let _open_event = AppEvent::OpenSettings;
     println!("   Handling OpenSettings event...");
     // Note: handle_event is private, but we can test the public methods
     app.enter_settings();
     println!("   State after OpenSettings: {:?}", app.state());
 
     // Simulate CloseSettings event
-    let close_event = AppEvent::CloseSettings;
+    let _close_event = AppEvent::CloseSettings;
     println!("   Handling CloseSettings event...");
     app.exit_settings();
     println!("   State after CloseSettings: {:?}", app.state());
