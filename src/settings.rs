@@ -35,8 +35,7 @@ impl Settings {
         match action {
             SettingsAction::ChangeTheme(variant) => {
                 self.theme_variant = variant;
-            }
-            // Future actions will be handled here
+            } // Future actions will be handled here
         }
     }
 
@@ -211,10 +210,10 @@ mod tests {
     fn test_theme_toggle() {
         let mut settings = Settings::new();
         assert_eq!(settings.theme_variant, ThemeVariant::EverforestDark);
-        
+
         settings.toggle_theme();
         assert_eq!(settings.theme_variant, ThemeVariant::EverforestLight);
-        
+
         settings.toggle_theme();
         assert_eq!(settings.theme_variant, ThemeVariant::EverforestDark);
     }
@@ -223,7 +222,7 @@ mod tests {
     fn test_settings_action() {
         let mut settings = Settings::new();
         let action = SettingsAction::ChangeTheme(ThemeVariant::EverforestLight);
-        
+
         settings.handle_action(action);
         assert_eq!(settings.theme_variant, ThemeVariant::EverforestLight);
     }
@@ -238,7 +237,7 @@ mod tests {
     fn test_settings_manager() {
         let mut manager = SettingsManager::new();
         let action = SettingsAction::ChangeTheme(ThemeVariant::EverforestLight);
-        
+
         assert!(manager.apply_action(action).is_ok());
         assert_eq!(manager.get().theme_variant, ThemeVariant::EverforestLight);
     }

@@ -20,7 +20,7 @@
 //! ```
 
 use agentic::{
-    settings::{Settings, SettingsAction, SettingsManager, SettingsError},
+    settings::{Settings, SettingsAction, SettingsError, SettingsManager},
     theme::{Theme, ThemeVariant},
 };
 
@@ -38,7 +38,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("🎨 Theme Management through Settings:");
     let mut theme = Theme::default();
     println!("  Initial theme variant: {:?}", theme.variant());
-    
+
     settings.apply_theme(&mut theme);
     println!("  After applying settings: {:?}", theme.variant());
     println!();

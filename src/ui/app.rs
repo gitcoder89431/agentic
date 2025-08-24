@@ -287,7 +287,10 @@ impl App {
     }
 
     /// Handle settings action
-    pub fn handle_settings_action(&mut self, action: SettingsAction) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn handle_settings_action(
+        &mut self,
+        action: SettingsAction,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         self.settings.apply_action(action)?;
         // Apply any theme changes
         self.settings.get().apply_theme(&mut self.theme);
