@@ -12,6 +12,12 @@ pub enum AppEvent {
     Quit,
     /// User requested to toggle the theme variant
     ToggleTheme,
+    /// User requested to open settings modal
+    OpenSettings,
+    /// User requested to close settings modal
+    CloseSettings,
+    /// Settings action to be applied
+    SettingsAction(crate::settings::SettingsAction),
     /// Terminal was resized to new dimensions
     Resize(u16, u16),
     /// Force quit the application (Ctrl+C)
@@ -41,7 +47,9 @@ impl EventHandler {
                 Event::Key(key_event) => {
                     // Handle key events
                     match key_event.code {
-                        KeyCode::Char('q') | KeyCode::Esc => Ok(AppEvent::Quit),
+                        KeyCode::Char('q') => Ok(AppEvent::Quit),
+                        KeyCode::Esc => Ok(AppEvent::CloseSettings),
+                        KeyCode::Char(',') => Ok(AppEvent::OpenSettings),
                         KeyCode::Char('t') | KeyCode::Char('T') => Ok(AppEvent::ToggleTheme),
                         KeyCode::Char('c')
                             if key_event.modifiers.contains(KeyModifiers::CONTROL) =>
@@ -69,8 +77,10 @@ impl Default for EventHandler {
 /// Application state for managing the lifecycle and current status
 #[derive(Debug, Clone, PartialEq)]
 pub enum AppState {
-    /// Application is running normally
-    Running,
+    /// Primary TUI interface
+    Main,
+    /// Settings modal active
+    Settings,
     /// Application is shutting down gracefully
     Quitting,
     /// Application encountered an error
@@ -79,6 +89,6 @@ pub enum AppState {
 
 impl Default for AppState {
     fn default() -> Self {
-        Self::Running
+        Self::Main
     }
 }
