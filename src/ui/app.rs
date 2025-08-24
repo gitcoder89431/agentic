@@ -24,6 +24,8 @@ use tokio::time;
 pub struct App {
     /// Current application state
     state: AppState,
+    /// Previous application state for ESC restoration
+    previous_state: AppState,
     /// Current theme
     theme: Theme,
     /// Layout manager using Taffy
@@ -40,7 +42,8 @@ impl App {
     /// Create a new application instance with the given theme
     pub fn new(theme: Theme) -> Self {
         Self {
-            state: AppState::Running,
+            state: AppState::Main,
+            previous_state: AppState::Main,
             theme,
             layout: AppLayout::new().expect("Failed to create layout"),
             event_handler: EventHandler::default(),
@@ -57,6 +60,20 @@ impl App {
     /// Check if the application should quit
     pub fn should_quit(&self) -> bool {
         matches!(self.state, AppState::Quitting)
+    }
+
+    /// Enter settings modal
+    pub fn enter_settings(&mut self) {
+        // Only set previous_state if we're not already in Settings
+        if !matches!(self.state, AppState::Settings) {
+            self.previous_state = self.state.clone();
+        }
+        self.state = AppState::Settings;
+    }
+
+    /// Exit settings modal and return to previous state
+    pub fn exit_settings(&mut self) {
+        self.state = self.previous_state.clone();
     }
 
     /// Main application run loop with proper async event handling
@@ -105,6 +122,24 @@ impl App {
         match event {
             AppEvent::Quit | AppEvent::ForceQuit => {
                 self.state = AppState::Quitting;
+            }
+            AppEvent::OpenSettings => {
+                self.enter_settings();
+            }
+            AppEvent::CloseSettings => {
+                // Only close settings if we're in settings mode
+                if matches!(self.state, AppState::Settings) {
+                    self.exit_settings();
+                } else {
+                    // If not in settings, ESC means quit
+                    self.state = AppState::Quitting;
+                }
+            }
+            AppEvent::SettingsAction(action) => {
+                // Handle settings actions and apply theme changes immediately
+                if let Err(e) = self.handle_settings_action(action) {
+                    self.state = AppState::Error(format!("Settings error: {}", e));
+                }
             }
             AppEvent::ToggleTheme => {
                 // Toggle theme through settings system
@@ -166,8 +201,7 @@ impl App {
     /// Render the main content area
     fn render_main_content(&self, frame: &mut Frame, area: ratatui::layout::Rect) {
         let content = match &self.state {
-            AppState::Running => {
-                // ASCII Art Logo for Agentic
+            AppState::Main => {
                 format!(r#"
 
     ╔═══════════════════════════════════════════════════════════════╗
@@ -202,11 +236,57 @@ impl App {
                     self.last_size
                 )
             }
+            AppState::Settings => {
+                format!(r#"
+    Settings Panel
+    ==============================================================
+    
+    APPEARANCE
+    --------------------------------------------------------------
+    
+    Theme Variant: {}
+    
+    KEYBINDINGS
+    --------------------------------------------------------------
+    
+    T - Toggle Theme Variant
+    ESC - Close Settings & Return to Main
+    
+    CURRENT CONFIGURATION
+    --------------------------------------------------------------
+    
+    Theme: {} Mode
+    Theme Variant: {}
+    Settings Foundation: Active
+    State Machine: Extended
+    
+    SETTINGS MANAGEMENT
+    --------------------------------------------------------------
+    
+    All changes apply immediately
+    Settings are managed through the SettingsManager
+    Use ESC to return to the main interface
+    
+"#,
+                    match self.theme.variant() {
+                        crate::theme::ThemeVariant::EverforestDark => "Everforest Dark",
+                        crate::theme::ThemeVariant::EverforestLight => "Everforest Light",
+                    },
+                    match self.theme.variant() {
+                        crate::theme::ThemeVariant::EverforestDark => "Dark",
+                        crate::theme::ThemeVariant::EverforestLight => "Light",
+                    },
+                    match self.settings().theme_variant {
+                        crate::theme::ThemeVariant::EverforestDark => "Everforest Dark",
+                        crate::theme::ThemeVariant::EverforestLight => "Everforest Light",
+                    }
+                )
+            }
             AppState::Quitting => {
-                "🔄 Shutting down gracefully...\n\nThank you for using Agentic!\n\nThe application will exit momentarily.".to_string()
+                "Shutting down gracefully...\n\nThank you for using Agentic!\n\nThe application will exit momentarily.".to_string()
             }
             AppState::Error(error) => {
-                format!("⚠️ Application Error\n\nAn error occurred:\n{}\n\nPress ESC or q to quit.", error)
+                format!("Application Error\n\nAn error occurred:\n{}\n\nPress ESC or q to quit.", error)
             }
         };
 
@@ -239,8 +319,12 @@ impl App {
             .title_style(self.theme.ratatui_style(Element::Title));
 
         let footer_text = match self.state {
-            AppState::Running => format!(
-                "ESC/q: Quit | T: Toggle Theme | Current: [{}] | Production v0.1.0",
+            AppState::Main => format!(
+                "ESC/q: Quit | T: Toggle Theme | ,: Settings | Current: [{}] | Production v0.1.0",
+                current_theme
+            ),
+            AppState::Settings => format!(
+                "ESC: Back to Main | T: Toggle Theme | Current: [{}] | Settings Mode",
                 current_theme
             ),
             AppState::Quitting => "Application shutting down gracefully...".to_string(),

@@ -67,7 +67,7 @@ impl Default for Settings {
 }
 
 /// Actions that can be performed on settings
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum SettingsAction {
     /// Change the active theme variant
     ChangeTheme(ThemeVariant),
