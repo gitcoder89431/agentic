@@ -537,10 +537,8 @@ impl App {
             if self.state == AppState::Main {
                 self.state = AppState::WaitingForConfig;
             }
-        } else {
-            if self.state == AppState::WaitingForConfig {
-                self.state = AppState::Main;
-            }
+        } else if self.state == AppState::WaitingForConfig {
+            self.state = AppState::Main;
         }
     }
 
