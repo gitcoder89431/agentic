@@ -186,9 +186,8 @@ impl App {
                 }
             }
             AppEvent::ToggleTheme => {
-                // Toggle theme through settings system
-                self.settings.get_mut().toggle_theme();
-                self.settings.get().apply_theme(&mut self.theme);
+                // T key functionality removed in Issue #21
+                // Theme changes now only available through settings modal
             }
             AppEvent::Resize(width, height) => {
                 self.last_size = Some((width, height));
@@ -371,11 +370,11 @@ impl App {
 
         let footer_text = match self.state {
             AppState::Main => format!(
-                "ESC/q: Quit | T: Toggle Theme | S: Settings | Current: [{}] | Production v0.1.0",
+                "ESC/q: Quit | ,: Settings | Current: [{}] | Production v0.1.0",
                 current_theme
             ),
             AppState::Settings => format!(
-                "ESC: Back to Main | T: Toggle Theme | Current: [{}] | Settings Mode",
+                "ESC: Back to Main | ↑↓/kj: Navigate | Enter/Space: Select | Current: [{}]",
                 current_theme
             ),
             AppState::Quitting => "Application shutting down gracefully...".to_string(),
