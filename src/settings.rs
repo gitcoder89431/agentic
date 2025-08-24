@@ -1129,28 +1129,28 @@ impl Settings {
             },
         }
     }
-    
+
     /// Check if at least one provider is valid and ready for queries
     pub fn has_valid_provider(&self) -> bool {
         self.local_provider.validation_status == ValidationStatus::Valid
             || self.openrouter_provider.validation_status == ValidationStatus::Valid
     }
-    
+
     /// Get list of available (valid) providers
     pub fn get_available_providers(&self) -> Vec<ProviderType> {
         let mut providers = Vec::new();
-        
+
         if self.local_provider.validation_status == ValidationStatus::Valid {
             providers.push(ProviderType::Local);
         }
-        
+
         if self.openrouter_provider.validation_status == ValidationStatus::Valid {
             providers.push(ProviderType::OpenRouter);
         }
-        
+
         providers
     }
-    
+
     /// Get provider configuration status for UI display
     pub fn get_provider_status_summary(&self) -> Vec<(ProviderType, ValidationStatus, String)> {
         vec![
@@ -1160,7 +1160,7 @@ impl Settings {
                 match &self.local_provider.endpoint_url {
                     Some(url) => url.clone(),
                     None => "Not configured".to_string(),
-                }
+                },
             ),
             (
                 ProviderType::OpenRouter,
@@ -1168,7 +1168,7 @@ impl Settings {
                 match &self.openrouter_provider.api_key {
                     Some(_) => "API configured".to_string(),
                     None => "Not configured".to_string(),
-                }
+                },
             ),
         ]
     }
