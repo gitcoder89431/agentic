@@ -55,7 +55,7 @@ impl EventHandler {
                     match key_event.code {
                         KeyCode::Char('q') => Ok(AppEvent::Quit),
                         KeyCode::Esc => Ok(AppEvent::CloseSettings),
-                        KeyCode::Char(',') => Ok(AppEvent::OpenSettings),
+                        KeyCode::Char('s') | KeyCode::Char('S') => Ok(AppEvent::OpenSettings),
                         KeyCode::Up | KeyCode::Char('k') => Ok(AppEvent::NavigateUp),
                         KeyCode::Down | KeyCode::Char('j') => Ok(AppEvent::NavigateDown),
                         KeyCode::Enter | KeyCode::Char(' ') => Ok(AppEvent::Select),

@@ -370,7 +370,7 @@ impl App {
 
         let footer_text = match self.state {
             AppState::Main => format!(
-                "ESC/q: Quit | ,: Settings | Current: [{}] | Production v0.1.0",
+                "ESC/q: Quit | S: Settings | Current: [{}] | Production v0.1.0",
                 current_theme
             ),
             AppState::Settings => format!(
