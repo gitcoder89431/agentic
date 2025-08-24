@@ -20,6 +20,10 @@ pub enum AppEvent {
     NavigateDown,
     /// Select current item in settings modal
     Select,
+    /// Start the AI orchestration application (Enter key)
+    StartApplication,
+    /// Toggle theme between Dark/Light
+    ToggleTheme,
     /// Settings action to be applied
     SettingsAction(crate::settings::SettingsAction),
     /// Terminal was resized to new dimensions
@@ -56,9 +60,15 @@ impl EventHandler {
                         KeyCode::Char(',') | KeyCode::Char('s') | KeyCode::Char('S') => {
                             Ok(AppEvent::OpenSettings)
                         }
+                        KeyCode::Char('t') | KeyCode::Char('T') => Ok(AppEvent::ToggleTheme),
                         KeyCode::Up | KeyCode::Char('k') => Ok(AppEvent::NavigateUp),
                         KeyCode::Down | KeyCode::Char('j') => Ok(AppEvent::NavigateDown),
-                        KeyCode::Enter | KeyCode::Char(' ') => Ok(AppEvent::Select),
+                        KeyCode::Enter => {
+                            // Enter can be either StartApplication or Select depending on context
+                            // We'll let the App decide which one to use based on state
+                            Ok(AppEvent::StartApplication)
+                        }
+                        KeyCode::Char(' ') => Ok(AppEvent::Select),
                         KeyCode::Char('c')
                             if key_event.modifiers.contains(KeyModifiers::CONTROL) =>
                         {

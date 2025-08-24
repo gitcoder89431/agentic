@@ -4,9 +4,10 @@
 //! Provides clean separation of concerns and runtime theme switching capability.
 
 use ratatui::style::{Color, Modifier, Style};
+use serde::{Deserialize, Serialize};
 
 /// Theme variants supported by Agentic
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ThemeVariant {
     /// Everforest Dark theme (default)
     EverforestDark,

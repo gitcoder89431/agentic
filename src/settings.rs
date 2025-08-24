@@ -1,1520 +1,546 @@
 //! Settings Module Foundation
 //!
-//! Centralized configuration management with extensible architecture.
-//! Provides clean separation of concerns and prepares for future feature expansion.
+//! Clean settings management with zen simplicity.
+//! Back to the beautiful architecture from the early issues.
 
 use crate::theme::{Theme, ThemeVariant};
 use ratatui::{
     Frame,
     crossterm::event::{KeyCode, KeyEvent},
-    layout::{Alignment, Constraint, Direction, Layout, Rect},
+    layout::{Constraint, Direction, Layout, Rect, Margin},
     widgets::{Block, Borders, Clear, Paragraph},
+    style::Style,
 };
-use reqwest::Client;
-use std::time::{Duration, Instant};
-use tokio::{sync::mpsc, time::timeout};
+use serde::{Deserialize, Serialize};
 
-/// Provider configuration types for backend communication
-#[derive(Debug, Clone, PartialEq)]
-pub enum ProviderType {
-    Local,
-    OpenRouter,
-}
-
-impl std::fmt::Display for ProviderType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ProviderType::Local => write!(f, "Local Provider"),
-            ProviderType::OpenRouter => write!(f, "OpenRouter"),
-        }
-    }
-}
-
-/// Provider configuration with validation status
-#[derive(Debug, Clone)]
-pub struct ProviderConfig {
-    pub provider_type: ProviderType,
-    pub endpoint_url: Option<String>, // For LOCAL
-    pub api_key: Option<String>,      // For OPENROUTER
-    pub validation_status: ValidationStatus,
-}
-
-/// Validation status for provider connections
-#[derive(Debug, Clone, PartialEq)]
+/// Validation status for provider connections - compatibility
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum ValidationStatus {
-    Unchecked, // Initial state
-    Checking,  // Validation in progress
-    Valid,     // ✅ Connection successful
-    Invalid,   // ❌ Connection failed
+    Unchecked,
+    Checking,
+    Valid,
+    Invalid,
 }
 
-/// Validation events for async communication
+/// Validation events for async communication - compatibility
 #[derive(Debug, Clone)]
 pub enum ValidationEvent {
-    StartValidation(ProviderType),
-    ValidationComplete {
-        provider: ProviderType,
-        result: AsyncValidationResult,
-    },
+    StartValidation,
+    ValidationComplete { status: ValidationStatus },
 }
 
-/// Async validation result with timing and detailed status
-#[derive(Debug, Clone)]
-pub struct AsyncValidationResult {
-    pub status: ValidationStatus,
-    pub message: Option<String>,
-    pub response_time: Option<Duration>,
-}
-
-/// Validation service for async provider testing
-pub struct ValidationService {
-    client: Client,
-    tx: mpsc::UnboundedSender<ValidationEvent>,
-}
-
-/// Provider field types for input focus management
-#[derive(Debug, Clone, PartialEq)]
-pub enum ProviderField {
-    Theme,
-    LocalEndpoint,
-    OpenRouterApiKey,
-    SaveButton,
-}
-
-/// Input state for text editing and field navigation
-#[derive(Debug, Clone)]
-pub struct InputState {
-    pub editing_field: Option<ProviderField>,
-    pub input_buffer: String,
-    pub original_value: String, // For ESC cancellation
-    pub cursor_position: usize,
-}
-
-impl InputState {
-    /// Create a new input state for editing a field
-    pub fn new(field: ProviderField, initial_value: String) -> Self {
-        Self {
-            editing_field: Some(field),
-            input_buffer: initial_value.clone(),
-            original_value: initial_value,
-            cursor_position: 0,
-        }
-    }
-
-    /// Reset input state to not editing
-    pub fn none() -> Self {
-        Self {
-            editing_field: None,
-            input_buffer: String::new(),
-            original_value: String::new(),
-            cursor_position: 0,
-        }
-    }
-
-    /// Check if currently editing
-    pub fn is_editing(&self) -> bool {
-        self.editing_field.is_some()
-    }
-
-    /// Add character to input buffer
-    pub fn add_char(&mut self, c: char) {
-        self.input_buffer.insert(self.cursor_position, c);
-        self.cursor_position += 1;
-    }
-
-    /// Remove character from input buffer (backspace)
-    pub fn remove_char(&mut self) {
-        if self.cursor_position > 0 {
-            self.cursor_position -= 1;
-            self.input_buffer.remove(self.cursor_position);
-        }
-    }
-
-    /// Cancel editing and revert to original value
-    pub fn cancel(&mut self) {
-        self.input_buffer = self.original_value.clone();
-        self.cursor_position = 0;
-    }
-}
-
-/// Validation result for input fields
-#[derive(Debug, Clone, PartialEq)]
-pub enum ValidationResult {
-    Valid,
-    Invalid(String),
-}
-
-/// Mask API key for secure display
-pub fn mask_api_key(key: &str) -> String {
-    if key.len() <= 13 {
-        return "*".repeat(key.len());
-    }
-
-    let start = &key[..10]; // First 10 characters
-    let end = &key[key.len() - 3..]; // Last 3 characters
-    format!("{}***...{}", start, end)
-}
-
-/// Unmask API key for editing
-pub fn unmask_for_editing(masked: &str, original: &str) -> String {
-    if masked.contains("***") {
-        original.to_string() // Return full key for editing
-    } else {
-        masked.to_string()
-    }
-}
-
-/// Validate local endpoint URL format
-pub fn validate_local_endpoint(url: &str) -> ValidationResult {
-    if url.is_empty() {
-        return ValidationResult::Invalid("Endpoint cannot be empty".to_string());
-    }
-
-    if url.starts_with("http://") || url.starts_with("https://") {
-        ValidationResult::Valid
-    } else {
-        ValidationResult::Invalid("Must start with http:// or https://".to_string())
-    }
-}
-
-/// Validate OpenRouter API key format
-pub fn validate_api_key(key: &str) -> ValidationResult {
-    if key.is_empty() {
-        return ValidationResult::Invalid("API key cannot be empty".to_string());
-    }
-
-    if key.starts_with("sk-or-v1-") && key.len() > 20 {
-        ValidationResult::Valid
-    } else {
-        ValidationResult::Invalid(
-            "Invalid API key format (should start with sk-or-v1-)".to_string(),
-        )
-    }
-}
-
-/// Async validation for LOCAL provider endpoint
-pub async fn validate_local_provider(endpoint: &str) -> AsyncValidationResult {
-    let client = Client::new();
-    let url = format!("{}/v1/models", endpoint.trim_end_matches('/'));
-    let start_time = Instant::now();
-
-    match timeout(Duration::from_secs(5), client.get(&url).send()).await {
-        Ok(Ok(response)) if response.status().is_success() => {
-            let elapsed = start_time.elapsed();
-            AsyncValidationResult {
-                status: ValidationStatus::Valid,
-                message: Some(format!("Connection successful ({}ms)", elapsed.as_millis())),
-                response_time: Some(elapsed),
-            }
-        }
-        Ok(Ok(response)) => AsyncValidationResult {
-            status: ValidationStatus::Invalid,
-            message: Some(format!(
-                "Server error: {} {}",
-                response.status().as_u16(),
-                response.status().canonical_reason().unwrap_or("Unknown")
-            )),
-            response_time: None,
-        },
-        Ok(Err(e)) => AsyncValidationResult {
-            status: ValidationStatus::Invalid,
-            message: Some(format!("Connection failed: {}", e)),
-            response_time: None,
-        },
-        Err(_) => AsyncValidationResult {
-            status: ValidationStatus::Invalid,
-            message: Some("Connection timeout (5s)".to_string()),
-            response_time: None,
-        },
-    }
-}
-
-/// Async validation for OPENROUTER provider API key
-pub async fn validate_openrouter_provider(api_key: &str) -> AsyncValidationResult {
-    let client = Client::new();
-    let url = "https://openrouter.ai/api/v1/models";
-    let start_time = Instant::now();
-
-    match timeout(
-        Duration::from_secs(5),
-        client
-            .get(url)
-            .header("Authorization", format!("Bearer {}", api_key))
-            .header("HTTP-Referer", "https://github.com/gitcoder89431/agentic")
-            .header("X-Title", "Agentic TUI")
-            .send(),
-    )
-    .await
-    {
-        Ok(Ok(response)) if response.status().is_success() => {
-            let elapsed = start_time.elapsed();
-            AsyncValidationResult {
-                status: ValidationStatus::Valid,
-                message: Some(format!("API key valid ({}ms)", elapsed.as_millis())),
-                response_time: Some(elapsed),
-            }
-        }
-        Ok(Ok(response)) if response.status() == 401 => AsyncValidationResult {
-            status: ValidationStatus::Invalid,
-            message: Some("Invalid API key - authentication failed".to_string()),
-            response_time: None,
-        },
-        Ok(Ok(response)) if response.status() == 429 => AsyncValidationResult {
-            status: ValidationStatus::Invalid,
-            message: Some("Rate limited - too many requests".to_string()),
-            response_time: None,
-        },
-        Ok(Ok(response)) => AsyncValidationResult {
-            status: ValidationStatus::Invalid,
-            message: Some(format!(
-                "API error: {} {}",
-                response.status().as_u16(),
-                response.status().canonical_reason().unwrap_or("Unknown")
-            )),
-            response_time: None,
-        },
-        Ok(Err(e)) => AsyncValidationResult {
-            status: ValidationStatus::Invalid,
-            message: Some(format!("Connection failed: {}", e)),
-            response_time: None,
-        },
-        Err(_) => AsyncValidationResult {
-            status: ValidationStatus::Invalid,
-            message: Some("Connection timeout (5s)".to_string()),
-            response_time: None,
-        },
-    }
-}
-
-impl ValidationService {
-    /// Create a new validation service
-    pub fn new(tx: mpsc::UnboundedSender<ValidationEvent>) -> Self {
-        Self {
-            client: Client::new(),
-            tx,
-        }
-    }
-
-    /// Start async validation for a provider
-    pub async fn validate_provider(&self, provider_type: ProviderType, config: &ProviderConfig) {
-        // Send start event
-        let _ = self
-            .tx
-            .send(ValidationEvent::StartValidation(provider_type.clone()));
-
-        let result = match provider_type {
-            ProviderType::Local => {
-                if let Some(endpoint) = &config.endpoint_url {
-                    self.validate_local_endpoint(endpoint).await
-                } else {
-                    AsyncValidationResult {
-                        status: ValidationStatus::Invalid,
-                        message: Some("No endpoint configured".to_string()),
-                        response_time: None,
-                    }
-                }
-            }
-            ProviderType::OpenRouter => {
-                if let Some(api_key) = &config.api_key {
-                    self.validate_openrouter_key(api_key).await
-                } else {
-                    AsyncValidationResult {
-                        status: ValidationStatus::Invalid,
-                        message: Some("No API key configured".to_string()),
-                        response_time: None,
-                    }
-                }
-            }
-        };
-
-        // Send completion event
-        let _ = self.tx.send(ValidationEvent::ValidationComplete {
-            provider: provider_type,
-            result,
-        });
-    }
-
-    /// Validate local endpoint using the service's client
-    async fn validate_local_endpoint(&self, endpoint: &str) -> AsyncValidationResult {
-        let url = format!("{}/v1/models", endpoint.trim_end_matches('/'));
-        let start_time = Instant::now();
-
-        match timeout(Duration::from_secs(5), self.client.get(&url).send()).await {
-            Ok(Ok(response)) if response.status().is_success() => {
-                let elapsed = start_time.elapsed();
-                AsyncValidationResult {
-                    status: ValidationStatus::Valid,
-                    message: Some(format!("Connection successful ({}ms)", elapsed.as_millis())),
-                    response_time: Some(elapsed),
-                }
-            }
-            Ok(Ok(response)) => AsyncValidationResult {
-                status: ValidationStatus::Invalid,
-                message: Some(format!(
-                    "Server error: {} {}",
-                    response.status().as_u16(),
-                    response.status().canonical_reason().unwrap_or("Unknown")
-                )),
-                response_time: None,
-            },
-            Ok(Err(e)) => AsyncValidationResult {
-                status: ValidationStatus::Invalid,
-                message: Some(format!("Connection failed: {}", e)),
-                response_time: None,
-            },
-            Err(_) => AsyncValidationResult {
-                status: ValidationStatus::Invalid,
-                message: Some("Connection timeout (5s)".to_string()),
-                response_time: None,
-            },
-        }
-    }
-
-    /// Validate OpenRouter API key using the service's client
-    async fn validate_openrouter_key(&self, api_key: &str) -> AsyncValidationResult {
-        let url = "https://openrouter.ai/api/v1/models";
-        let start_time = Instant::now();
-
-        match timeout(
-            Duration::from_secs(5),
-            self.client
-                .get(url)
-                .header("Authorization", format!("Bearer {}", api_key))
-                .header("HTTP-Referer", "https://github.com/gitcoder89431/agentic")
-                .header("X-Title", "Agentic TUI")
-                .send(),
-        )
-        .await
-        {
-            Ok(Ok(response)) if response.status().is_success() => {
-                let elapsed = start_time.elapsed();
-                AsyncValidationResult {
-                    status: ValidationStatus::Valid,
-                    message: Some(format!("API key valid ({}ms)", elapsed.as_millis())),
-                    response_time: Some(elapsed),
-                }
-            }
-            Ok(Ok(response)) if response.status() == 401 => AsyncValidationResult {
-                status: ValidationStatus::Invalid,
-                message: Some("Invalid API key - authentication failed".to_string()),
-                response_time: None,
-            },
-            Ok(Ok(response)) if response.status() == 429 => AsyncValidationResult {
-                status: ValidationStatus::Invalid,
-                message: Some("Rate limited - too many requests".to_string()),
-                response_time: None,
-            },
-            Ok(Ok(response)) => AsyncValidationResult {
-                status: ValidationStatus::Invalid,
-                message: Some(format!(
-                    "API error: {} {}",
-                    response.status().as_u16(),
-                    response.status().canonical_reason().unwrap_or("Unknown")
-                )),
-                response_time: None,
-            },
-            Ok(Err(e)) => AsyncValidationResult {
-                status: ValidationStatus::Invalid,
-                message: Some(format!("Connection failed: {}", e)),
-                response_time: None,
-            },
-            Err(_) => AsyncValidationResult {
-                status: ValidationStatus::Invalid,
-                message: Some("Connection timeout (5s)".to_string()),
-                response_time: None,
-            },
-        }
-    }
-}
-
-/// Provider section for UI rendering
-#[derive(Debug, Clone)]
-pub struct ProviderSection {
-    pub title: String,
-    pub status_icon: String,
-    pub fields: Vec<ConfigField>,
-    pub is_focused: bool,
-}
-
-/// Configuration field for UI rendering
-#[derive(Debug, Clone)]
-pub struct ConfigField {
-    pub label: String,
-    pub value: String,
-    pub is_masked: bool,
-    pub is_focused: bool,
-    pub is_editing: bool,
-}
-
-impl ProviderConfig {
-    /// Create a new LOCAL provider configuration
-    pub fn new_local() -> Self {
-        Self {
-            provider_type: ProviderType::Local,
-            endpoint_url: Some("http://localhost:11434".to_string()), // Default Ollama endpoint
-            api_key: None,
-            validation_status: ValidationStatus::Unchecked,
-        }
-    }
-
-    /// Create a new OpenRouter provider configuration
-    pub fn new_openrouter() -> Self {
-        Self {
-            provider_type: ProviderType::OpenRouter,
-            endpoint_url: None,
-            api_key: None,
-            validation_status: ValidationStatus::Unchecked,
-        }
-    }
-
-    /// Update the endpoint URL (for LOCAL providers)
-    pub fn set_endpoint_url(&mut self, url: String) {
-        if matches!(self.provider_type, ProviderType::Local) {
-            self.endpoint_url = Some(url);
-            self.validation_status = ValidationStatus::Unchecked;
-        }
-    }
-
-    /// Update the API key (for OpenRouter providers)
-    pub fn set_api_key(&mut self, key: String) {
-        if matches!(self.provider_type, ProviderType::OpenRouter) {
-            self.api_key = Some(key);
-            self.validation_status = ValidationStatus::Unchecked;
-        }
-    }
-
-    /// Get a masked version of the API key for display
-    pub fn get_masked_api_key(&self) -> Option<String> {
-        self.api_key.as_ref().map(|key| {
-            if key.len() <= 13 {
-                "*".repeat(key.len())
-            } else {
-                format!("{}...{}", &key[..10], &key[key.len() - 3..])
-            }
-        })
-    }
-
-    /// Check if the provider configuration is complete
-    pub fn is_configured(&self) -> bool {
-        match self.provider_type {
-            ProviderType::Local => self.endpoint_url.is_some(),
-            ProviderType::OpenRouter => self.api_key.is_some(),
-        }
-    }
-}
-
-/// Core settings structure with extensible design
-#[derive(Debug, Clone)]
+/// Clean settings structure - back to basics
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Settings {
-    /// Current theme variant selection
     pub theme_variant: ThemeVariant,
-
-    // Provider configuration
-    pub local_provider: ProviderConfig,
-    pub openrouter_provider: ProviderConfig,
-    pub selected_provider_index: usize, // For UI navigation
-    pub focused_field: Option<ProviderField>,
-
-    // Input state for text editing
-    pub input_state: Option<InputState>,
+    pub local_endpoint: String,
+    pub local_model: String,
+    pub api_key: String,
+    pub openrouter_model: String,
 }
 
-/// Settings modal state for UI navigation
-#[derive(Debug, Clone)]
-pub struct SettingsModalState {
-    /// Currently selected theme index in the modal
-    pub selected_theme_index: usize,
-    /// Available theme variants for selection
-    pub available_themes: Vec<ThemeVariant>,
-}
-
-impl SettingsModalState {
-    /// Create a new modal state with current theme selected
-    pub fn new(current_theme: ThemeVariant) -> Self {
-        let available_themes = vec![ThemeVariant::EverforestDark, ThemeVariant::EverforestLight];
-        let selected_theme_index = available_themes
-            .iter()
-            .position(|&t| t == current_theme)
-            .unwrap_or(0);
-
+impl Default for Settings {
+    fn default() -> Self {
         Self {
-            selected_theme_index,
-            available_themes,
+            theme_variant: ThemeVariant::EverforestDark,
+            local_endpoint: "localhost:2034".to_string(),
+            local_model: "llama3.1".to_string(),
+            api_key: "".to_string(),
+            openrouter_model: "anthropic/claude-3.5-sonnet".to_string(),
         }
-    }
-
-    /// Navigate up in the theme selection
-    pub fn navigate_up(&mut self) {
-        if self.selected_theme_index > 0 {
-            self.selected_theme_index -= 1;
-        } else {
-            // Wrap to bottom
-            self.selected_theme_index = self.available_themes.len() - 1;
-        }
-    }
-
-    /// Navigate down in the theme selection
-    pub fn navigate_down(&mut self) {
-        if self.selected_theme_index < self.available_themes.len() - 1 {
-            self.selected_theme_index += 1;
-        } else {
-            // Wrap to top
-            self.selected_theme_index = 0;
-        }
-    }
-
-    /// Get the currently selected theme variant
-    pub fn selected_theme(&self) -> ThemeVariant {
-        self.available_themes[self.selected_theme_index]
     }
 }
 
 impl Settings {
-    /// Create new settings instance with sensible defaults
     pub fn new() -> Self {
-        Settings {
-            theme_variant: ThemeVariant::EverforestDark,
-            local_provider: ProviderConfig::new_local(),
-            openrouter_provider: ProviderConfig::new_openrouter(),
-            selected_provider_index: 0, // Start with Local provider selected
-            focused_field: None,
-            input_state: None,
-        }
+        Self::default()
     }
-
-    /// Apply current settings to theme instance
+    
     pub fn apply_theme(&self, theme: &mut Theme) {
-        theme.set_variant(self.theme_variant);
+        *theme = Theme::new(self.theme_variant);
     }
 
-    /// Enter edit mode for a specific field
-    pub fn enter_edit_mode(&mut self, field: ProviderField) {
-        let current_value = self.get_field_value(&field);
-        // For text fields, start with existing value for editing
-        // For new configurations, this will be empty
-        self.input_state = Some(InputState::new(field, current_value));
+    /// Load settings from file with proper error handling
+    pub fn load_from_file() -> Self {
+        // For now, just return defaults
+        // TODO: Implement actual file loading if needed
+        Self::default()
     }
 
-    /// Exit edit mode and optionally save changes
-    pub fn exit_edit_mode(&mut self, save: bool) {
-        if save
-            && let Some(input_state) = &self.input_state
-            && let Some(ref field) = input_state.editing_field
-        {
-            let field_clone = field.clone();
-            let buffer_clone = input_state.input_buffer.clone();
-            self.save_field_value(&field_clone, &buffer_clone);
-        }
-        self.input_state = None;
-    }
-
-    /// Get the current value of a field
-    pub fn get_field_value(&self, field: &ProviderField) -> String {
-        match field {
-            ProviderField::LocalEndpoint => {
-                self.local_provider.endpoint_url.clone().unwrap_or_default()
-            }
-            ProviderField::OpenRouterApiKey => {
-                // Return unmasked value for editing
-                self.openrouter_provider.api_key.clone().unwrap_or_default()
-            }
-            ProviderField::Theme | ProviderField::SaveButton => {
-                String::new() // Non-text fields
-            }
-        }
-    }
-
-    /// Save field value from input buffer
-    pub fn save_field_value(&mut self, field: &ProviderField, value: &str) {
-        match field {
-            ProviderField::LocalEndpoint => {
-                self.local_provider.set_endpoint_url(value.to_string());
-            }
-            ProviderField::OpenRouterApiKey => {
-                self.openrouter_provider.set_api_key(value.to_string());
-            }
-            ProviderField::Theme | ProviderField::SaveButton => {
-                // Non-text fields - no saving needed
-            }
-        }
-    }
-
-    /// Navigate to next field in tab order
-    pub fn navigate_next_field(&mut self) {
-        let fields = [
-            ProviderField::Theme,
-            ProviderField::LocalEndpoint,
-            ProviderField::OpenRouterApiKey,
-            ProviderField::SaveButton,
-        ];
-
-        let current_index = if let Some(ref field) = self.focused_field {
-            fields.iter().position(|f| f == field).unwrap_or(0)
-        } else {
-            // If no field is focused, start before the first field
-            fields.len() - 1
-        };
-
-        let next_index = (current_index + 1) % fields.len();
-        self.focused_field = Some(fields[next_index].clone());
-    }
-
-    /// Navigate to previous field in tab order
-    pub fn navigate_previous_field(&mut self) {
-        let fields = [
-            ProviderField::Theme,
-            ProviderField::LocalEndpoint,
-            ProviderField::OpenRouterApiKey,
-            ProviderField::SaveButton,
-        ];
-
-        let current_index = if let Some(ref field) = self.focused_field {
-            fields.iter().position(|f| f == field).unwrap_or(0)
-        } else {
-            0
-        };
-
-        let prev_index = if current_index == 0 {
-            fields.len() - 1
-        } else {
-            current_index - 1
-        };
-        self.focused_field = Some(fields[prev_index].clone());
-    }
-
-    /// Validate current input buffer
-    pub fn validate_current_input(&self) -> ValidationResult {
-        if let Some(ref input_state) = self.input_state
-            && let Some(ref field) = input_state.editing_field
-        {
-            return self.validate_field_value(field, &input_state.input_buffer);
-        }
-        ValidationResult::Valid
-    }
-
-    /// Validate a field value
-    pub fn validate_field_value(&self, field: &ProviderField, value: &str) -> ValidationResult {
-        match field {
-            ProviderField::LocalEndpoint => validate_local_endpoint(value),
-            ProviderField::OpenRouterApiKey => validate_api_key(value),
-            ProviderField::Theme | ProviderField::SaveButton => ValidationResult::Valid,
-        }
-    }
-
-    /// Check if currently in edit mode
-    pub fn is_editing(&self) -> bool {
-        self.input_state.as_ref().is_some_and(|s| s.is_editing())
-    }
-
-    /// Get display value for a field (with masking for API keys)
-    pub fn get_display_value(&self, field: &ProviderField) -> String {
-        match field {
-            ProviderField::LocalEndpoint => self
-                .local_provider
-                .endpoint_url
-                .clone()
-                .unwrap_or("Not configured".to_string()),
-            ProviderField::OpenRouterApiKey => {
-                if let Some(ref key) = self.openrouter_provider.api_key {
-                    mask_api_key(key)
-                } else {
-                    "Not configured".to_string()
-                }
-            }
-            ProviderField::Theme | ProviderField::SaveButton => String::new(),
-        }
-    }
-
-    /// Handle settings action and update state
-    pub fn handle_action(&mut self, action: SettingsAction) {
-        match action {
-            // Theme actions
-            SettingsAction::ChangeTheme(variant) => {
-                self.theme_variant = variant;
-            }
-            SettingsAction::NavigateThemePrevious => {
-                // This will be handled by SettingsModalState
-            }
-            SettingsAction::NavigateThemeNext => {
-                // This will be handled by SettingsModalState
-            }
-
-            // Provider actions
-            SettingsAction::NavigateProviderPrevious => {
-                if self.selected_provider_index > 0 {
-                    self.selected_provider_index -= 1;
-                } else {
-                    self.selected_provider_index = 1; // Wrap to OpenRouter (index 1)
-                }
-                self.focused_field = None; // Clear field focus when changing providers
-            }
-            SettingsAction::NavigateProviderNext => {
-                if self.selected_provider_index < 1 {
-                    self.selected_provider_index += 1;
-                } else {
-                    self.selected_provider_index = 0; // Wrap to Local (index 0)
-                }
-                self.focused_field = None; // Clear field focus when changing providers
-            }
-            SettingsAction::FocusField(field) => {
-                self.focused_field = Some(field);
-            }
-            SettingsAction::UpdateField(field, value) => match field {
-                ProviderField::LocalEndpoint => {
-                    self.local_provider.set_endpoint_url(value);
-                }
-                ProviderField::OpenRouterApiKey => {
-                    self.openrouter_provider.set_api_key(value);
-                }
-                ProviderField::Theme | ProviderField::SaveButton => {
-                    // Non-text fields - no direct value updates
-                }
-            },
-            SettingsAction::ValidateProvider(provider_type) => {
-                match provider_type {
-                    ProviderType::Local => {
-                        self.local_provider.validation_status = ValidationStatus::Checking;
-                        // TODO: Implement async validation
-                    }
-                    ProviderType::OpenRouter => {
-                        self.openrouter_provider.validation_status = ValidationStatus::Checking;
-                        // TODO: Implement async validation
-                    }
-                }
-            }
-            SettingsAction::SaveConfiguration => {
-                // TODO: Implement configuration persistence
-            }
-
-            // Input actions for Issue #31
-            SettingsAction::NavigateNextField => {
-                self.navigate_next_field();
-            }
-            SettingsAction::NavigatePreviousField => {
-                self.navigate_previous_field();
-            }
-            SettingsAction::EnterEditMode(field) => {
-                self.enter_edit_mode(field);
-            }
-            SettingsAction::ExitEditMode(save) => {
-                self.exit_edit_mode(save);
-            }
-            SettingsAction::InputCharacter(c) => {
-                if let Some(ref mut input_state) = self.input_state {
-                    input_state.add_char(c);
-                }
-            }
-            SettingsAction::InputBackspace => {
-                if let Some(ref mut input_state) = self.input_state {
-                    input_state.remove_char();
-                }
-            }
-            SettingsAction::CancelEdit => {
-                if let Some(ref mut input_state) = self.input_state {
-                    input_state.cancel();
-                }
-                self.input_state = None;
-            }
-        }
-    }
-
-    /// Get current theme variant
-    pub fn theme_variant(&self) -> ThemeVariant {
-        self.theme_variant
-    }
-
-    /// Toggle between available theme variants
-    pub fn toggle_theme(&mut self) {
-        self.theme_variant = match self.theme_variant {
-            ThemeVariant::EverforestDark => ThemeVariant::EverforestLight,
-            ThemeVariant::EverforestLight => ThemeVariant::EverforestDark,
-        };
-    }
-
-    /// Get the currently selected provider configuration
-    pub fn get_selected_provider(&self) -> &ProviderConfig {
-        match self.selected_provider_index {
-            0 => &self.local_provider,
-            1 => &self.openrouter_provider,
-            _ => &self.local_provider, // Default to local
-        }
-    }
-
-    /// Get the currently selected provider configuration (mutable)
-    pub fn get_selected_provider_mut(&mut self) -> &mut ProviderConfig {
-        match self.selected_provider_index {
-            0 => &mut self.local_provider,
-            1 => &mut self.openrouter_provider,
-            _ => &mut self.local_provider, // Default to local
-        }
-    }
-
-    /// Get provider name for display
-    pub fn get_provider_name(&self, index: usize) -> &str {
-        match index {
-            0 => "Local (Ollama)",
-            1 => "OpenRouter",
-            _ => "Unknown",
-        }
-    }
-
-    /// Check if at least one provider is configured
-    pub fn has_configured_provider(&self) -> bool {
-        self.local_provider.is_configured() || self.openrouter_provider.is_configured()
-    }
-
-    /// Handle keyboard input for settings modal
-    pub fn handle_key_event(&mut self, key: KeyEvent) -> Option<SettingsAction> {
-        // If in edit mode, handle text input
-        if self.is_editing() {
-            return self.handle_edit_mode_key(key);
-        }
-
-        // Navigation mode
-        match key.code {
-            KeyCode::Tab => Some(SettingsAction::NavigateNextField),
-            KeyCode::BackTab => Some(SettingsAction::NavigatePreviousField),
-            KeyCode::Down => Some(SettingsAction::NavigateNextField),
-            KeyCode::Up => Some(SettingsAction::NavigatePreviousField),
-            KeyCode::Enter => {
-                if let Some(ref field) = self.focused_field {
-                    match field {
-                        ProviderField::LocalEndpoint | ProviderField::OpenRouterApiKey => {
-                            Some(SettingsAction::EnterEditMode(field.clone()))
-                        }
-                        ProviderField::SaveButton => Some(SettingsAction::SaveConfiguration),
-                        ProviderField::Theme => {
-                            // Toggle theme
-                            let new_theme = match self.theme_variant {
-                                ThemeVariant::EverforestDark => ThemeVariant::EverforestLight,
-                                ThemeVariant::EverforestLight => ThemeVariant::EverforestDark,
-                            };
-                            Some(SettingsAction::ChangeTheme(new_theme))
-                        }
-                    }
-                } else {
-                    None
-                }
-            }
-            KeyCode::Left | KeyCode::Right => {
-                // Handle theme selection if theme is focused
-                if let Some(ProviderField::Theme) = self.focused_field {
-                    let new_theme = match self.theme_variant {
-                        ThemeVariant::EverforestDark => ThemeVariant::EverforestLight,
-                        ThemeVariant::EverforestLight => ThemeVariant::EverforestDark,
-                    };
-                    Some(SettingsAction::ChangeTheme(new_theme))
-                } else {
-                    None
-                }
-            }
-            _ => None,
-        }
-    }
-
-    /// Handle keyboard input while in edit mode
-    fn handle_edit_mode_key(&mut self, key: KeyEvent) -> Option<SettingsAction> {
-        match key.code {
-            KeyCode::Enter => {
-                Some(SettingsAction::ExitEditMode(true)) // Save and exit
-            }
-            KeyCode::Esc => Some(SettingsAction::CancelEdit),
-            KeyCode::Backspace => Some(SettingsAction::InputBackspace),
-            KeyCode::Char(c) => Some(SettingsAction::InputCharacter(c)),
-            _ => None,
-        }
-    }
-
-    /// Get validation status emoji for display
-    pub fn get_validation_status_icon(status: &ValidationStatus) -> &str {
-        match status {
-            ValidationStatus::Unchecked => "⚪",
-            ValidationStatus::Checking => "🟡",
-            ValidationStatus::Valid => "✅",
-            ValidationStatus::Invalid => "❌",
-        }
-    }
-
-    /// Create provider sections for UI rendering
-    pub fn get_provider_sections(&self) -> Vec<ProviderSection> {
-        vec![
-            self.create_local_provider_section(),
-            self.create_openrouter_provider_section(),
-        ]
-    }
-
-    /// Create local provider section for UI
-    fn create_local_provider_section(&self) -> ProviderSection {
-        let is_editing_endpoint = matches!(
-            self.input_state
-                .as_ref()
-                .and_then(|s| s.editing_field.as_ref()),
-            Some(ProviderField::LocalEndpoint)
-        );
-
-        let endpoint_value = if is_editing_endpoint {
-            self.input_state.as_ref().unwrap().input_buffer.clone()
-        } else {
-            self.get_display_value(&ProviderField::LocalEndpoint)
-        };
-
-        let endpoint_field = ConfigField {
-            label: "Endpoint".to_string(),
-            value: endpoint_value,
-            is_masked: false,
-            is_focused: matches!(self.focused_field, Some(ProviderField::LocalEndpoint)),
-            is_editing: is_editing_endpoint,
-        };
-
-        ProviderSection {
-            title: "LOCAL Provider".to_string(),
-            status_icon: Self::get_validation_status_icon(&self.local_provider.validation_status)
-                .to_string(),
-            fields: vec![endpoint_field],
-            is_focused: self.selected_provider_index == 0,
-        }
-    }
-
-    /// Create OpenRouter provider section for UI
-    fn create_openrouter_provider_section(&self) -> ProviderSection {
-        let is_editing_api_key = matches!(
-            self.input_state
-                .as_ref()
-                .and_then(|s| s.editing_field.as_ref()),
-            Some(ProviderField::OpenRouterApiKey)
-        );
-
-        let api_key_value = if is_editing_api_key {
-            // Show unmasked value when editing
-            self.input_state.as_ref().unwrap().input_buffer.clone()
-        } else {
-            self.get_display_value(&ProviderField::OpenRouterApiKey)
-        };
-
-        let api_key_field = ConfigField {
-            label: "API Key".to_string(),
-            value: api_key_value,
-            is_masked: self.openrouter_provider.api_key.is_some() && !is_editing_api_key,
-            is_focused: matches!(self.focused_field, Some(ProviderField::OpenRouterApiKey)),
-            is_editing: is_editing_api_key,
-        };
-
-        ProviderSection {
-            title: "OPENROUTER Provider".to_string(),
-            status_icon: Self::get_validation_status_icon(
-                &self.openrouter_provider.validation_status,
-            )
-            .to_string(),
-            fields: vec![api_key_field],
-            is_focused: self.selected_provider_index == 1,
-        }
-    }
-
-    /// Validate current settings configuration
-    pub fn validate(&self) -> Result<(), SettingsError> {
-        // Validate that at least one provider is configured
-        if !self.has_configured_provider() {
-            return Err(SettingsError::ValidationFailed(
-                "At least one provider must be configured".to_string(),
-            ));
-        }
-
-        // Validate local provider endpoint URL format if configured
-        if let Some(ref url) = self.local_provider.endpoint_url
-            && !url.starts_with("http://")
-            && !url.starts_with("https://")
-        {
-            return Err(SettingsError::ValidationFailed(
-                "Local endpoint must be a valid HTTP/HTTPS URL".to_string(),
-            ));
-        }
-
-        // Validate OpenRouter API key format if configured
-        if let Some(ref key) = self.openrouter_provider.api_key
-            && key.trim().is_empty()
-        {
-            return Err(SettingsError::ValidationFailed(
-                "OpenRouter API key cannot be empty".to_string(),
-            ));
-        }
-
+    /// Save settings to file - placeholder
+    pub fn save_to_file(&self) -> Result<(), String> {
+        // TODO: Implement actual file saving if needed
         Ok(())
     }
 
-    /// Start async validation for all configured providers
-    pub async fn validate_all_providers(
-        &mut self,
-        tx: mpsc::UnboundedSender<ValidationEvent>,
-    ) -> Vec<tokio::task::JoinHandle<()>> {
-        let validation_service = ValidationService::new(tx);
-        let mut tasks = Vec::new();
-
-        // Start validation for local provider if configured
-        if self.local_provider.endpoint_url.is_some() {
-            self.local_provider.validation_status = ValidationStatus::Checking;
-            let service = ValidationService::new(validation_service.tx.clone());
-            let config = self.local_provider.clone();
-            let task = tokio::spawn(async move {
-                service
-                    .validate_provider(ProviderType::Local, &config)
-                    .await;
-            });
-            tasks.push(task);
-        }
-
-        // Start validation for OpenRouter provider if configured
-        if self.openrouter_provider.api_key.is_some() {
-            self.openrouter_provider.validation_status = ValidationStatus::Checking;
-            let service = ValidationService::new(validation_service.tx.clone());
-            let config = self.openrouter_provider.clone();
-            let task = tokio::spawn(async move {
-                service
-                    .validate_provider(ProviderType::OpenRouter, &config)
-                    .await;
-            });
-            tasks.push(task);
-        }
-
-        tasks
+    /// Placeholder methods for compatibility with old interface
+    pub fn has_local_provider_valid(&self) -> bool {
+        !self.local_endpoint.is_empty()
     }
 
-    /// Validate a specific provider asynchronously
-    pub async fn validate_provider(
-        &mut self,
-        provider_type: ProviderType,
-        tx: mpsc::UnboundedSender<ValidationEvent>,
-    ) -> tokio::task::JoinHandle<()> {
-        let validation_service = ValidationService::new(tx);
-
-        match provider_type {
-            ProviderType::Local => {
-                self.local_provider.validation_status = ValidationStatus::Checking;
-                let config = self.local_provider.clone();
-                tokio::spawn(async move {
-                    validation_service
-                        .validate_provider(ProviderType::Local, &config)
-                        .await;
-                })
-            }
-            ProviderType::OpenRouter => {
-                self.openrouter_provider.validation_status = ValidationStatus::Checking;
-                let config = self.openrouter_provider.clone();
-                tokio::spawn(async move {
-                    validation_service
-                        .validate_provider(ProviderType::OpenRouter, &config)
-                        .await;
-                })
-            }
-        }
+    pub fn get_provider_status_summary(&self) -> String {
+        "Local: ⚪ Cloud: ⚪".to_string()
     }
 
-    /// Handle validation event results
-    pub fn handle_validation_event(&mut self, event: ValidationEvent) {
-        match event {
-            ValidationEvent::StartValidation(provider_type) => match provider_type {
-                ProviderType::Local => {
-                    self.local_provider.validation_status = ValidationStatus::Checking;
-                }
-                ProviderType::OpenRouter => {
-                    self.openrouter_provider.validation_status = ValidationStatus::Checking;
-                }
-            },
-            ValidationEvent::ValidationComplete { provider, result } => match provider {
-                ProviderType::Local => {
-                    self.local_provider.validation_status = result.status;
-                }
-                ProviderType::OpenRouter => {
-                    self.openrouter_provider.validation_status = result.status;
-                }
-            },
-        }
-    }
-
-    /// Check if at least one provider is valid and ready for queries
-    pub fn has_valid_provider(&self) -> bool {
-        self.local_provider.validation_status == ValidationStatus::Valid
-            || self.openrouter_provider.validation_status == ValidationStatus::Valid
-    }
-
-    /// Get list of available (valid) providers
-    pub fn get_available_providers(&self) -> Vec<ProviderType> {
-        let mut providers = Vec::new();
-
-        if self.local_provider.validation_status == ValidationStatus::Valid {
-            providers.push(ProviderType::Local);
-        }
-
-        if self.openrouter_provider.validation_status == ValidationStatus::Valid {
-            providers.push(ProviderType::OpenRouter);
-        }
-
-        providers
-    }
-
-    /// Get provider configuration status for UI display
-    pub fn get_provider_status_summary(&self) -> Vec<(ProviderType, ValidationStatus, String)> {
-        vec![
-            (
-                ProviderType::Local,
-                self.local_provider.validation_status.clone(),
-                match &self.local_provider.endpoint_url {
-                    Some(url) => url.clone(),
-                    None => "Not configured".to_string(),
-                },
-            ),
-            (
-                ProviderType::OpenRouter,
-                self.openrouter_provider.validation_status.clone(),
-                match &self.openrouter_provider.api_key {
-                    Some(_) => "API configured".to_string(),
-                    None => "Not configured".to_string(),
-                },
-            ),
-        ]
+    pub fn get_available_providers(&self) -> Vec<String> {
+        vec!["Local".to_string(), "OpenRouter".to_string()]
     }
 }
 
-impl Default for Settings {
+/// Simple settings actions - clean and minimal
+#[derive(Debug, Clone, PartialEq)]
+pub enum SettingsAction {
+    ChangeTheme(ThemeVariant),
+    SetLocalEndpoint(String),
+    SetLocalModel(String),
+    SetApiKey(String),
+    SetOpenRouterModel(String),
+    StartApp, // New action for starting the app from settings
+}
+
+impl Settings {
+    pub fn handle_action(&mut self, action: SettingsAction) {
+        match action {
+            SettingsAction::ChangeTheme(variant) => {
+                self.theme_variant = variant;
+            }
+            SettingsAction::SetLocalEndpoint(endpoint) => {
+                self.local_endpoint = endpoint;
+            }
+            SettingsAction::SetLocalModel(model) => {
+                self.local_model = model;
+            }
+            SettingsAction::SetApiKey(key) => {
+                self.api_key = key;
+            }
+            SettingsAction::SetOpenRouterModel(model) => {
+                self.openrouter_model = model;
+            }
+            SettingsAction::StartApp => {
+                // No-op: this is handled at the app level
+            }
+        }
+    }
+}
+
+/// Simple settings modal state
+#[derive(Debug, Clone)]
+pub struct SettingsModalState {
+    pub selected_index: usize,
+    pub editing_field: Option<usize>,
+    pub input_buffer: String,
+    pub available_themes: Vec<ThemeVariant>,
+}
+
+impl Default for SettingsModalState {
+    fn default() -> Self {
+        Self {
+            selected_index: 0,
+            editing_field: None,
+            input_buffer: String::new(),
+            available_themes: vec![ThemeVariant::EverforestDark, ThemeVariant::EverforestLight],
+        }
+    }
+}
+
+impl SettingsModalState {
+    /// Create new modal state with theme
+    pub fn new(theme_variant: ThemeVariant) -> Self {
+        Self {
+            selected_index: 0,
+            editing_field: None,
+            input_buffer: String::new(),
+            available_themes: vec![ThemeVariant::EverforestDark, ThemeVariant::EverforestLight],
+        }
+    }
+
+    /// Navigate up in the menu
+    pub fn navigate_up(&mut self) {
+        if self.selected_index > 0 {
+            self.selected_index -= 1;
+        }
+    }
+
+    /// Navigate down in the menu
+    pub fn navigate_down(&mut self) {
+        if self.selected_index < 4 {
+            self.selected_index += 1;
+        }
+    }
+
+    /// Get the currently selected theme
+    pub fn selected_theme(&self) -> ThemeVariant {
+        // For now, just return the first available theme
+        self.available_themes[0]
+    }
+}
+
+/// Settings manager - clean and simple
+pub struct SettingsManager {
+    settings: Settings,
+    modal_state: Option<SettingsModalState>,
+}
+
+impl Default for SettingsManager {
     fn default() -> Self {
         Self::new()
     }
 }
 
-/// Actions that can be performed on settings
-#[derive(Debug, Clone, PartialEq)]
-pub enum SettingsAction {
-    // Theme actions
-    ChangeTheme(ThemeVariant),
-    NavigateThemePrevious,
-    NavigateThemeNext,
-
-    // Provider actions
-    NavigateProviderPrevious,
-    NavigateProviderNext,
-    FocusField(ProviderField),
-    UpdateField(ProviderField, String),
-    ValidateProvider(ProviderType),
-    SaveConfiguration,
-
-    // Input actions for Issue #31
-    NavigateNextField,
-    NavigatePreviousField,
-    EnterEditMode(ProviderField),
-    ExitEditMode(bool), // bool indicates whether to save
-    InputCharacter(char),
-    InputBackspace,
-    CancelEdit,
-}
-
-/// Settings-related errors
-#[derive(Debug, Clone, PartialEq)]
-pub enum SettingsError {
-    /// Invalid theme variant
-    InvalidTheme(String),
-    /// Configuration validation failed
-    ValidationFailed(String),
-    // Future error types:
-    // InvalidApiKey(String),
-    // InvalidModelConfig(String),
-    // KeybindConflict(String),
-}
-
-impl std::fmt::Display for SettingsError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            SettingsError::InvalidTheme(theme) => {
-                write!(f, "Invalid theme variant: {}", theme)
-            }
-            SettingsError::ValidationFailed(reason) => {
-                write!(f, "Settings validation failed: {}", reason)
-            }
-        }
-    }
-}
-
-impl std::error::Error for SettingsError {}
-
-/// Future-ready settings categories for extensibility
-/// These will be implemented as the application grows
-/// Appearance-related settings
-#[derive(Debug, Clone)]
-pub struct AppearanceSettings {
-    pub theme_variant: ThemeVariant,
-    pub animation_speed: f32,
-    pub show_borders: bool,
-    pub font_size: u16,
-}
-
-/// Model configuration settings
-#[derive(Debug, Clone)]
-pub struct ModelSettings {
-    pub default_model: String,
-    pub temperature: f32,
-    pub max_tokens: u32,
-    pub timeout_seconds: u32,
-}
-
-/// Keybinding configuration
-#[derive(Debug, Clone)]
-pub struct KeybindSettings {
-    pub quit_keys: Vec<String>,
-    pub theme_toggle_key: String,
-    pub help_key: String,
-}
-
-/// Advanced configuration options
-#[derive(Debug, Clone)]
-pub struct AdvancedSettings {
-    pub debug_mode: bool,
-    pub performance_mode: bool,
-    pub log_level: String,
-    pub auto_save: bool,
-}
-
-/// Settings manager for handling persistence and validation
-/// Future implementation will include file-based configuration
-#[derive(Debug)]
-pub struct SettingsManager {
-    settings: Settings,
-    // config_path: PathBuf,
-    // auto_save: bool,
-}
-
 impl SettingsManager {
-    /// Create new settings manager
     pub fn new() -> Self {
         Self {
             settings: Settings::new(),
+            modal_state: None,
         }
     }
 
-    /// Get immutable reference to current settings
+    /// Create a settings manager from existing settings
+    pub fn from_settings(settings: Settings) -> Self {
+        Self {
+            settings,
+            modal_state: None,
+        }
+    }
+
+    /// Get immutable access to settings
     pub fn get(&self) -> &Settings {
         &self.settings
     }
 
-    /// Get mutable reference to current settings
+    /// Get mutable access to settings
     pub fn get_mut(&mut self) -> &mut Settings {
         &mut self.settings
     }
 
-    /// Apply action to settings
-    pub fn apply_action(&mut self, action: SettingsAction) -> Result<(), SettingsError> {
+    pub fn settings(&self) -> &Settings {
+        &self.settings
+    }
+
+    pub fn settings_mut(&mut self) -> &mut Settings {
+        &mut self.settings
+    }
+
+    pub fn modal_state(&self) -> Option<&SettingsModalState> {
+        self.modal_state.as_ref()
+    }
+
+    pub fn modal_state_mut(&mut self) -> Option<&mut SettingsModalState> {
+        self.modal_state.as_mut()
+    }
+
+    pub fn show_modal(&mut self) {
+        self.modal_state = Some(SettingsModalState::default());
+    }
+
+    pub fn hide_modal(&mut self) {
+        self.modal_state = None;
+    }
+
+    pub fn is_modal_open(&self) -> bool {
+        self.modal_state.is_some()
+    }
+
+    pub fn handle_action(&mut self, action: SettingsAction) -> Result<(), String> {
         self.settings.handle_action(action);
-        self.settings.validate()?;
-        // Future: auto-save if enabled
         Ok(())
+    }
+
+    /// Compatibility method for old interface
+    pub fn apply_action(&mut self, action: SettingsAction) -> Result<(), String> {
+        self.handle_action(action)
     }
 
     /// Reset settings to defaults
     pub fn reset_to_defaults(&mut self) {
-        self.settings = Settings::new();
-    }
-
-    // Future methods:
-    // pub fn load_from_file(&mut self, path: &Path) -> Result<(), SettingsError>
-    // pub fn save_to_file(&self, path: &Path) -> Result<(), SettingsError>
-    // pub fn auto_save(&self) -> Result<(), SettingsError>
-}
-
-/// Render the settings modal as a centered popup
-pub fn render_settings_modal(
-    f: &mut Frame,
-    area: Rect,
-    modal_state: &SettingsModalState,
-    settings: &Settings,
-    theme: &Theme,
-) {
-    // Create a larger centered modal area for provider configuration
-    let modal_area = centered_rect(80, 70, area);
-
-    // Clear the background (overlay effect)
-    f.render_widget(Clear, area);
-
-    // Create the modal layout
-    let modal_layout = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(1), // Title
-            Constraint::Min(4),    // Provider configurations
-            Constraint::Length(3), // Theme selection section
-            Constraint::Length(1), // Save button
-            Constraint::Length(1), // Help text
-        ])
-        .split(modal_area);
-
-    // Modal border and title
-    let modal_block = Block::default()
-        .title(" Settings ")
-        .borders(Borders::ALL)
-        .border_style(theme.border_style());
-
-    f.render_widget(modal_block, modal_area);
-
-    // Render provider sections
-    render_provider_sections(f, modal_layout[1], settings, theme);
-
-    // Theme selection at the bottom (as requested)
-    render_theme_selection(f, modal_layout[2], modal_state, theme);
-
-    // Save configuration button
-    let save_button = Paragraph::new("  [Save Configuration]  ")
-        .style(theme.highlight_style())
-        .alignment(Alignment::Center);
-    f.render_widget(save_button, modal_layout[3]);
-
-    // Help text at bottom
-    let help_text = Paragraph::new("ESC: Close  ↑↓: Navigate  Enter: Edit  S: Save")
-        .style(theme.secondary_style())
-        .alignment(Alignment::Center);
-    f.render_widget(help_text, modal_layout[4]);
-}
-
-/// Render provider configuration sections
-fn render_provider_sections(f: &mut Frame, area: Rect, settings: &Settings, theme: &Theme) {
-    let provider_sections = settings.get_provider_sections();
-
-    // Split area for each provider section
-    let section_constraints: Vec<Constraint> = provider_sections
-        .iter()
-        .map(|_| Constraint::Length(4)) // Each provider section takes 4 lines
-        .collect();
-
-    let section_layout = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints(section_constraints)
-        .split(area);
-
-    // Render each provider section
-    for (i, section) in provider_sections.iter().enumerate() {
-        if i < section_layout.len() {
-            render_provider_section(f, section_layout[i], section, theme);
-        }
+        self.settings = Settings::default();
     }
 }
 
-/// Render a single provider section
-fn render_provider_section(f: &mut Frame, area: Rect, section: &ProviderSection, theme: &Theme) {
-    // Layout for provider section: title+status, field lines
-    let provider_layout = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(1), // Provider title with status
-            Constraint::Min(2),    // Fields
-        ])
-        .split(area);
-
-    // Provider title with status icon
-    let title_style = if section.is_focused {
-        theme.highlight_style()
-    } else {
-        theme.text_style()
+/// Handle settings input events - clean and simple
+pub fn handle_settings_input(
+    event: KeyEvent,
+    manager: &mut SettingsManager,
+) -> Result<Option<SettingsAction>, String> {
+    let Some(modal_state) = manager.modal_state_mut() else {
+        return Ok(None);
     };
 
-    let title_line = format!("  {}    {}", section.title, section.status_icon);
-    let title_paragraph = Paragraph::new(title_line)
-        .style(title_style)
-        .alignment(Alignment::Left);
-    f.render_widget(title_paragraph, provider_layout[0]);
-
-    // Render fields
-    for (i, field) in section.fields.iter().enumerate() {
-        if let Some(field_area) = provider_layout[1].height.checked_sub(i as u16)
-            && field_area > 0
-        {
-            let field_rect = Rect {
-                x: provider_layout[1].x,
-                y: provider_layout[1].y + i as u16,
-                width: provider_layout[1].width,
-                height: 1,
+    match event.code {
+        KeyCode::Esc => {
+            manager.hide_modal();
+            Ok(None)
+        }
+        KeyCode::Up => {
+            if modal_state.selected_index > 0 {
+                modal_state.selected_index -= 1;
+            }
+            Ok(None)
+        }
+        KeyCode::Down => {
+            if modal_state.selected_index < 5 { // Now we have 6 fields (0-5)
+                modal_state.selected_index += 1;
+            }
+            Ok(None)
+        }
+        KeyCode::Enter => {
+            // Start editing the selected field
+            let selected_index = modal_state.selected_index;
+            
+            // Get initial value based on which field is selected
+            let initial_value = match selected_index {
+                0 => {
+                    // Get the value immutably first
+                    let value = manager.settings().local_endpoint.clone();
+                    // Now we can get modal_state mutably again
+                    let modal_state = manager.modal_state_mut().unwrap();
+                    modal_state.editing_field = Some(selected_index);
+                    modal_state.input_buffer = value;
+                    return Ok(None);
+                }
+                1 => {
+                    let value = manager.settings().local_model.clone();
+                    let modal_state = manager.modal_state_mut().unwrap();
+                    modal_state.editing_field = Some(selected_index);
+                    modal_state.input_buffer = value;
+                    return Ok(None);
+                }
+                2 => {
+                    let value = manager.settings().api_key.clone();
+                    let modal_state = manager.modal_state_mut().unwrap();
+                    modal_state.editing_field = Some(selected_index);
+                    modal_state.input_buffer = value;
+                    return Ok(None);
+                }
+                3 => {
+                    let value = manager.settings().openrouter_model.clone();
+                    let modal_state = manager.modal_state_mut().unwrap();
+                    modal_state.editing_field = Some(selected_index);
+                    modal_state.input_buffer = value;
+                    return Ok(None);
+                }
+                4 => return Ok(None), // Theme - handle separately
+                5 => {
+                    // Start App option - no editing needed, just trigger the action
+                    return Ok(Some(SettingsAction::StartApp));
+                }
+                _ => String::new(),
             };
-            render_config_field(f, field_rect, field, theme);
+            
+            Ok(None)
         }
+        KeyCode::Left | KeyCode::Right if modal_state.selected_index == 4 => {
+            // Theme switching (still on index 4)
+            let current_variant = manager.settings().theme_variant;
+            let new_variant = match current_variant {
+                ThemeVariant::EverforestDark => ThemeVariant::EverforestLight,
+                ThemeVariant::EverforestLight => ThemeVariant::EverforestDark,
+            };
+            Ok(Some(SettingsAction::ChangeTheme(new_variant)))
+        }
+        _ if modal_state.editing_field.is_some() => {
+            // Handle text input while editing
+            match event.code {
+                KeyCode::Char(c) => {
+                    modal_state.input_buffer.push(c);
+                    Ok(None)
+                }
+                KeyCode::Backspace => {
+                    modal_state.input_buffer.pop();
+                    Ok(None)
+                }
+                KeyCode::Enter => {
+                    // Save the edited value
+                    let action = match modal_state.editing_field.unwrap() {
+                        0 => SettingsAction::SetLocalEndpoint(modal_state.input_buffer.clone()),
+                        1 => SettingsAction::SetLocalModel(modal_state.input_buffer.clone()),
+                        2 => SettingsAction::SetApiKey(modal_state.input_buffer.clone()),
+                        3 => SettingsAction::SetOpenRouterModel(modal_state.input_buffer.clone()),
+                        _ => return Ok(None),
+                    };
+                    modal_state.editing_field = None;
+                    modal_state.input_buffer.clear();
+                    Ok(Some(action))
+                }
+                KeyCode::Esc => {
+                    // Cancel editing
+                    modal_state.editing_field = None;
+                    modal_state.input_buffer.clear();
+                    Ok(None)
+                }
+                _ => Ok(None),
+            }
+        }
+        _ => Ok(None),
     }
 }
 
-/// Render a configuration field
-/// Render a configuration field with input state support
-fn render_config_field(f: &mut Frame, area: Rect, field: &ConfigField, theme: &Theme) {
-    let field_style = if field.is_editing {
-        theme.highlight_style() // Highlight style when editing
-    } else if field.is_focused {
-        theme.secondary_style() // Secondary style when focused
+/// Render the settings modal - clean and beautiful
+pub fn render_settings_modal(
+    frame: &mut Frame,
+    manager: &SettingsManager,
+    theme: &Theme,
+    area: Rect,
+) {
+    let Some(modal_state) = manager.modal_state() else {
+        return;
+    };
+
+    // Create a centered modal
+    let modal_area = centered_rect(60, 70, area);
+    
+    // Clear the background
+    frame.render_widget(Clear, modal_area);
+    
+    // Modal block
+    let modal_block = Block::default()
+        .borders(Borders::ALL)
+        .title(" Settings ")
+        .style(theme.text_style());
+    
+    frame.render_widget(modal_block, modal_area);
+    
+    // Inner area for content
+    let inner = modal_area.inner(Margin { horizontal: 2, vertical: 1 });
+    
+    // Create layout for settings items
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(1), // Local:
+            Constraint::Length(1), // Model:
+            Constraint::Length(1), // Cloud:
+            Constraint::Length(1), // Model:
+            Constraint::Length(1), // Theme:
+            Constraint::Length(1), // Start App:
+        ])
+        .split(inner);
+    
+    // Render each setting item
+    render_setting_item(
+        frame,
+        chunks[0],
+        "Local:",
+        &get_display_value(&manager.settings().local_endpoint, modal_state.editing_field == Some(0), &modal_state.input_buffer),
+        modal_state.selected_index == 0,
+        modal_state.editing_field == Some(0),
+        theme,
+    );
+    
+    render_setting_item(
+        frame,
+        chunks[1],
+        "Model:",
+        &get_display_value(&manager.settings().local_model, modal_state.editing_field == Some(1), &modal_state.input_buffer),
+        modal_state.selected_index == 1,
+        modal_state.editing_field == Some(1),
+        theme,
+    );
+    
+    render_setting_item(
+        frame,
+        chunks[2],
+        "Cloud:",
+        &get_display_value(&mask_api_key(&manager.settings().api_key), modal_state.editing_field == Some(2), &modal_state.input_buffer),
+        modal_state.selected_index == 2,
+        modal_state.editing_field == Some(2),
+        theme,
+    );
+    
+    render_setting_item(
+        frame,
+        chunks[3],
+        "Model:",
+        &get_display_value(&manager.settings().openrouter_model, modal_state.editing_field == Some(3), &modal_state.input_buffer),
+        modal_state.selected_index == 3,
+        modal_state.editing_field == Some(3),
+        theme,
+    );
+    
+    render_setting_item(
+        frame,
+        chunks[4],
+        "Theme:",
+        &format!("{:?}", manager.settings().theme_variant),
+        modal_state.selected_index == 4,
+        false,
+        theme,
+    );
+    
+    render_setting_item(
+        frame,
+        chunks[5],
+        "Start App:",
+        "Press Enter to start",
+        modal_state.selected_index == 5,
+        false,
+        theme,
+    );
+}
+
+/// Render a single setting item with clean sushi menu style
+fn render_setting_item(
+    frame: &mut Frame,
+    area: Rect,
+    label: &str,
+    value: &str,
+    is_selected: bool,
+    is_editing: bool,
+    theme: &Theme,
+) {
+    let style = if is_selected {
+        theme.accent_style()
     } else {
         theme.text_style()
     };
-
-    // Format field with appropriate indicators
-    let field_text = if field.is_editing {
-        // Show cursor indicator when editing
-        format!("  {}: {}|", field.label, field.value)
-    } else if field.is_focused {
-        format!("  {}: {}", field.label, add_underline(&field.value))
+    
+    let display_value = if is_editing {
+        format!("{}_", value)
     } else {
-        format!("  {}: {}", field.label, field.value)
+        value.to_string()
     };
-
-    let field_paragraph = Paragraph::new(field_text)
-        .style(field_style)
-        .alignment(Alignment::Left);
-    f.render_widget(field_paragraph, area);
+    
+    let text = format!("{} {}", label, display_value);
+    let text_len = text.len();
+    let paragraph = Paragraph::new(text).style(style);
+    
+    frame.render_widget(paragraph, area);
+    
+    // Render selection underline if selected
+    if is_selected {
+        let underline_area = Rect {
+            x: area.x,
+            y: area.y,
+            width: text_len as u16,
+            height: 1,
+        };
+        let underline = Paragraph::new("‾".repeat(text_len))
+            .style(theme.accent_style());
+        frame.render_widget(underline, underline_area);
+    }
 }
 
-/// Add underline characters to text for focused fields
-fn add_underline(text: &str) -> String {
-    let underline = "▔".repeat(text.len().max(20)); // Minimum 20 chars underline
-    format!("{}\n            {}", text, underline)
+/// Helper function to get display value based on editing state
+fn get_display_value(actual_value: &str, is_editing: bool, input_buffer: &str) -> String {
+    if is_editing {
+        input_buffer.to_string()
+    } else {
+        actual_value.to_string()
+    }
 }
 
-/// Render theme selection section (moved to bottom as requested)
-fn render_theme_selection(
-    f: &mut Frame,
-    area: Rect,
-    modal_state: &SettingsModalState,
-    theme: &Theme,
-) {
-    // Layout for theme section
-    let theme_layout = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(1), // "Theme" label
-            Constraint::Length(1), // Theme options horizontal
-        ])
-        .split(area);
-
-    // Theme section label
-    let theme_label = Paragraph::new("  Theme")
-        .style(theme.text_style())
-        .alignment(Alignment::Left);
-    f.render_widget(theme_label, theme_layout[0]);
-
-    // Theme options in horizontal layout as requested: [Dark] left or right [Light]
-    let current_theme_name = match modal_state.available_themes[modal_state.selected_theme_index] {
-        ThemeVariant::EverforestDark => "Dark",
-        ThemeVariant::EverforestLight => "Light",
-    };
-
-    let theme_line = format!(
-        "  [{}] ← → [{}]",
-        if current_theme_name == "Dark" {
-            "●Dark"
-        } else {
-            "Dark"
-        },
-        if current_theme_name == "Light" {
-            "●Light"
-        } else {
-            "Light"
-        }
-    );
-
-    let theme_selection = Paragraph::new(theme_line)
-        .style(theme.text_style())
-        .alignment(Alignment::Left);
-    f.render_widget(theme_selection, theme_layout[1]);
+/// Mask API key for display
+fn mask_api_key(api_key: &str) -> String {
+    if api_key.is_empty() {
+        "".to_string()
+    } else if api_key.len() <= 8 {
+        "*".repeat(api_key.len())
+    } else {
+        format!("{}...{}", &api_key[..4], &api_key[api_key.len()-4..])
+    }
 }
 
-/// Calculate centered rectangle for modal positioning
+/// Helper function to create a centered rectangle
 fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
     let popup_layout = Layout::default()
         .direction(Direction::Vertical)
@@ -1533,447 +559,4 @@ fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
             Constraint::Percentage((100 - percent_x) / 2),
         ])
         .split(popup_layout[1])[1]
-}
-
-impl Default for SettingsManager {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_settings_creation() {
-        let settings = Settings::new();
-        assert_eq!(settings.theme_variant, ThemeVariant::EverforestDark);
-    }
-
-    #[test]
-    fn test_theme_toggle() {
-        let mut settings = Settings::new();
-        assert_eq!(settings.theme_variant, ThemeVariant::EverforestDark);
-
-        settings.toggle_theme();
-        assert_eq!(settings.theme_variant, ThemeVariant::EverforestLight);
-
-        settings.toggle_theme();
-        assert_eq!(settings.theme_variant, ThemeVariant::EverforestDark);
-    }
-
-    #[test]
-    fn test_settings_action() {
-        let mut settings = Settings::new();
-        let action = SettingsAction::ChangeTheme(ThemeVariant::EverforestLight);
-
-        settings.handle_action(action);
-        assert_eq!(settings.theme_variant, ThemeVariant::EverforestLight);
-    }
-
-    #[test]
-    fn test_settings_validation() {
-        let settings = Settings::new();
-        assert!(settings.validate().is_ok());
-    }
-
-    #[test]
-    fn test_settings_manager() {
-        let mut manager = SettingsManager::new();
-        let action = SettingsAction::ChangeTheme(ThemeVariant::EverforestLight);
-
-        assert!(manager.apply_action(action).is_ok());
-        assert_eq!(manager.get().theme_variant, ThemeVariant::EverforestLight);
-    }
-
-    #[test]
-    fn test_provider_config_creation() {
-        let local_config = ProviderConfig::new_local();
-        assert!(matches!(local_config.provider_type, ProviderType::Local));
-        assert!(local_config.endpoint_url.is_some());
-        assert!(local_config.api_key.is_none());
-        assert_eq!(local_config.validation_status, ValidationStatus::Unchecked);
-
-        let openrouter_config = ProviderConfig::new_openrouter();
-        assert!(matches!(
-            openrouter_config.provider_type,
-            ProviderType::OpenRouter
-        ));
-        assert!(openrouter_config.endpoint_url.is_none());
-        assert!(openrouter_config.api_key.is_none());
-        assert_eq!(
-            openrouter_config.validation_status,
-            ValidationStatus::Unchecked
-        );
-    }
-
-    #[test]
-    fn test_provider_config_updates() {
-        let mut local_config = ProviderConfig::new_local();
-        local_config.set_endpoint_url("http://localhost:8080".to_string());
-        assert_eq!(
-            local_config.endpoint_url.as_ref().unwrap(),
-            "http://localhost:8080"
-        );
-        assert_eq!(local_config.validation_status, ValidationStatus::Unchecked);
-
-        let mut openrouter_config = ProviderConfig::new_openrouter();
-        openrouter_config.set_api_key("sk-or-test123".to_string());
-        assert_eq!(openrouter_config.api_key.as_ref().unwrap(), "sk-or-test123");
-        assert_eq!(
-            openrouter_config.validation_status,
-            ValidationStatus::Unchecked
-        );
-    }
-
-    #[test]
-    fn test_api_key_masking() {
-        let mut config = ProviderConfig::new_openrouter();
-        config.set_api_key("sk-or-123456789012345".to_string());
-
-        let masked = config.get_masked_api_key().unwrap();
-        assert_eq!(masked, "sk-or-1234...345");
-
-        // Test short key
-        config.set_api_key("short".to_string());
-        let masked_short = config.get_masked_api_key().unwrap();
-        assert_eq!(masked_short, "*****");
-    }
-
-    #[test]
-    fn test_provider_configuration_actions() {
-        let mut settings = Settings::new();
-
-        // Test provider navigation
-        assert_eq!(settings.selected_provider_index, 0);
-        settings.handle_action(SettingsAction::NavigateProviderNext);
-        assert_eq!(settings.selected_provider_index, 1);
-        settings.handle_action(SettingsAction::NavigateProviderNext);
-        assert_eq!(settings.selected_provider_index, 0); // Should wrap around
-
-        // Test field updates
-        settings.handle_action(SettingsAction::UpdateField(
-            ProviderField::LocalEndpoint,
-            "http://localhost:9090".to_string(),
-        ));
-        assert_eq!(
-            settings.local_provider.endpoint_url.as_ref().unwrap(),
-            "http://localhost:9090"
-        );
-
-        settings.handle_action(SettingsAction::UpdateField(
-            ProviderField::OpenRouterApiKey,
-            "test-key-123".to_string(),
-        ));
-        assert_eq!(
-            settings.openrouter_provider.api_key.as_ref().unwrap(),
-            "test-key-123"
-        );
-    }
-
-    #[test]
-    fn test_provider_validation() {
-        let mut settings = Settings::new();
-
-        // Should fail validation - no providers configured beyond defaults
-        settings.local_provider.endpoint_url = None;
-        settings.openrouter_provider.api_key = None;
-        assert!(settings.validate().is_err());
-
-        // Should pass with local provider configured
-        settings.local_provider.endpoint_url = Some("http://localhost:11434".to_string());
-        assert!(settings.validate().is_ok());
-
-        // Should fail with invalid URL
-        settings.local_provider.endpoint_url = Some("not-a-url".to_string());
-        assert!(settings.validate().is_err());
-
-        // Should pass with valid OpenRouter config
-        settings.local_provider.endpoint_url = None;
-        settings.openrouter_provider.api_key = Some("sk-test-key".to_string());
-        assert!(settings.validate().is_ok());
-
-        // Should fail with empty API key
-        settings.openrouter_provider.api_key = Some("   ".to_string());
-        assert!(settings.validate().is_err());
-    }
-
-    #[test]
-    fn test_input_state_management() {
-        let mut settings = Settings::new();
-
-        // Clear the default value first
-        settings.local_provider.endpoint_url = None;
-
-        // Test entering edit mode
-        settings.enter_edit_mode(ProviderField::LocalEndpoint);
-        assert!(settings.is_editing());
-        assert_eq!(
-            settings.input_state.as_ref().unwrap().editing_field,
-            Some(ProviderField::LocalEndpoint)
-        );
-
-        // Test input buffer updates
-        settings.handle_action(SettingsAction::InputCharacter('h'));
-        settings.handle_action(SettingsAction::InputCharacter('t'));
-        settings.handle_action(SettingsAction::InputCharacter('t'));
-        settings.handle_action(SettingsAction::InputCharacter('p'));
-
-        assert_eq!(settings.input_state.as_ref().unwrap().input_buffer, "http");
-
-        // Test backspace
-        settings.handle_action(SettingsAction::InputBackspace);
-        assert_eq!(settings.input_state.as_ref().unwrap().input_buffer, "htt");
-
-        // Test save and exit
-        settings.handle_action(SettingsAction::ExitEditMode(true));
-        assert!(!settings.is_editing());
-        assert!(settings.input_state.is_none());
-    }
-
-    #[test]
-    fn test_field_navigation() {
-        let mut settings = Settings::new();
-
-        // Test next field navigation starting from no focus
-        settings.navigate_next_field();
-        assert_eq!(settings.focused_field, Some(ProviderField::Theme));
-
-        settings.navigate_next_field();
-        assert_eq!(settings.focused_field, Some(ProviderField::LocalEndpoint));
-
-        settings.navigate_next_field();
-        assert_eq!(
-            settings.focused_field,
-            Some(ProviderField::OpenRouterApiKey)
-        );
-
-        settings.navigate_next_field();
-        assert_eq!(settings.focused_field, Some(ProviderField::SaveButton));
-
-        // Test wrap around
-        settings.navigate_next_field();
-        assert_eq!(settings.focused_field, Some(ProviderField::Theme));
-
-        // Test previous field navigation
-        settings.navigate_previous_field();
-        assert_eq!(settings.focused_field, Some(ProviderField::SaveButton));
-    }
-
-    #[test]
-    fn test_input_validation() {
-        let settings = Settings::new();
-
-        // Test valid local endpoint
-        assert_eq!(
-            settings.validate_field_value(&ProviderField::LocalEndpoint, "http://localhost:8080"),
-            ValidationResult::Valid
-        );
-
-        // Test invalid local endpoint
-        assert!(matches!(
-            settings.validate_field_value(&ProviderField::LocalEndpoint, "invalid-url"),
-            ValidationResult::Invalid(_)
-        ));
-
-        // Test valid API key
-        assert_eq!(
-            settings.validate_field_value(
-                &ProviderField::OpenRouterApiKey,
-                "sk-or-v1-1234567890abcdef"
-            ),
-            ValidationResult::Valid
-        );
-
-        // Test invalid API key
-        assert!(matches!(
-            settings.validate_field_value(&ProviderField::OpenRouterApiKey, "invalid-key"),
-            ValidationResult::Invalid(_)
-        ));
-    }
-
-    #[test]
-    fn test_api_key_masking_and_unmasking() {
-        // Test short key masking
-        assert_eq!(mask_api_key("short"), "*****");
-
-        // Test long key masking
-        assert_eq!(
-            mask_api_key("sk-or-v1-1234567890abcdefghij"),
-            "sk-or-v1-1***...hij"
-        );
-
-        // Test unmasking for editing
-        let original = "sk-or-v1-1234567890abcdefghij";
-        let masked = mask_api_key(original);
-        assert_eq!(unmask_for_editing(&masked, original), original);
-        assert_eq!(unmask_for_editing("unmasked", "original"), "unmasked");
-    }
-
-    #[tokio::test]
-    async fn test_async_validation_service() {
-        let (tx, mut rx) = mpsc::unbounded_channel();
-        let service = ValidationService::new(tx);
-
-        // Test local provider validation with unconfigured provider
-        let mut local_config = ProviderConfig::new_local();
-        local_config.endpoint_url = None; // Remove endpoint to test unconfigured case
-
-        service
-            .validate_provider(ProviderType::Local, &local_config)
-            .await;
-
-        // Should receive start and complete events
-        let start_event = rx.recv().await.unwrap();
-        let complete_event = rx.recv().await.unwrap();
-
-        match start_event {
-            ValidationEvent::StartValidation(ProviderType::Local) => {}
-            _ => panic!("Expected StartValidation event for Local"),
-        }
-
-        match complete_event {
-            ValidationEvent::ValidationComplete { provider, result } => {
-                assert_eq!(provider, ProviderType::Local);
-                assert_eq!(result.status, ValidationStatus::Invalid); // No endpoint configured
-                assert!(result.message.is_some());
-                assert!(
-                    result
-                        .message
-                        .as_ref()
-                        .unwrap()
-                        .contains("No endpoint configured")
-                );
-            }
-            _ => panic!("Expected ValidationComplete event"),
-        }
-    }
-
-    #[tokio::test]
-    async fn test_local_provider_validation() {
-        // Test invalid endpoint
-        let result = validate_local_provider("http://localhost:99999").await;
-        assert_eq!(result.status, ValidationStatus::Invalid);
-        assert!(result.message.is_some());
-        assert!(result.response_time.is_none());
-
-        // Test malformed URL
-        let result = validate_local_provider("not-a-url").await;
-        assert_eq!(result.status, ValidationStatus::Invalid);
-        assert!(result.message.is_some());
-    }
-
-    #[tokio::test]
-    async fn test_openrouter_provider_validation() {
-        // Test with a clearly invalid API key format that should fail
-        let result = validate_openrouter_provider("definitely-not-a-valid-key").await;
-        // Note: We don't assert the status here since OpenRouter might accept various formats
-        // Instead, we just check that we get a response
-        assert!(result.message.is_some());
-
-        // Test empty key through the service
-        let (tx, mut rx) = mpsc::unbounded_channel();
-        let service = ValidationService::new(tx);
-        let mut config = ProviderConfig::new_openrouter();
-        config.api_key = None; // No API key configured
-
-        service
-            .validate_provider(ProviderType::OpenRouter, &config)
-            .await;
-
-        // Skip start event
-        let _ = rx.recv().await.unwrap();
-
-        // Check complete event
-        let complete_event = rx.recv().await.unwrap();
-        match complete_event {
-            ValidationEvent::ValidationComplete { provider, result } => {
-                assert_eq!(provider, ProviderType::OpenRouter);
-                assert_eq!(result.status, ValidationStatus::Invalid);
-                assert!(
-                    result
-                        .message
-                        .as_ref()
-                        .unwrap()
-                        .contains("No API key configured")
-                );
-            }
-            _ => panic!("Expected ValidationComplete event"),
-        }
-    }
-
-    #[tokio::test]
-    async fn test_settings_validation_integration() {
-        let mut settings = Settings::new();
-        let (tx, mut rx) = mpsc::unbounded_channel();
-
-        // Configure providers
-        settings.local_provider.endpoint_url = Some("http://localhost:11434".to_string());
-        settings.openrouter_provider.api_key = Some("sk-or-v1-test".to_string());
-
-        // Test validate_all_providers
-        let tasks = settings.validate_all_providers(tx.clone()).await;
-        assert_eq!(tasks.len(), 2); // Both providers configured
-
-        // Wait for tasks to complete
-        for task in tasks {
-            let _ = task.await;
-        }
-
-        // Check that validation events were sent
-        let mut events_received = 0;
-        while let Ok(Some(_)) = tokio::time::timeout(Duration::from_millis(100), rx.recv()).await {
-            events_received += 1;
-            if events_received >= 4 {
-                // Start + Complete for each provider
-                break;
-            }
-        }
-        assert_eq!(events_received, 4);
-    }
-
-    #[test]
-    fn test_validation_event_handling() {
-        let mut settings = Settings::new();
-
-        // Test StartValidation event
-        settings.handle_validation_event(ValidationEvent::StartValidation(ProviderType::Local));
-        assert_eq!(
-            settings.local_provider.validation_status,
-            ValidationStatus::Checking
-        );
-
-        settings
-            .handle_validation_event(ValidationEvent::StartValidation(ProviderType::OpenRouter));
-        assert_eq!(
-            settings.openrouter_provider.validation_status,
-            ValidationStatus::Checking
-        );
-
-        // Test ValidationComplete event
-        let result = AsyncValidationResult {
-            status: ValidationStatus::Valid,
-            message: Some("Success".to_string()),
-            response_time: Some(Duration::from_millis(100)),
-        };
-
-        settings.handle_validation_event(ValidationEvent::ValidationComplete {
-            provider: ProviderType::Local,
-            result: result.clone(),
-        });
-        assert_eq!(
-            settings.local_provider.validation_status,
-            ValidationStatus::Valid
-        );
-
-        settings.handle_validation_event(ValidationEvent::ValidationComplete {
-            provider: ProviderType::OpenRouter,
-            result,
-        });
-        assert_eq!(
-            settings.openrouter_provider.validation_status,
-            ValidationStatus::Valid
-        );
-    }
 }

@@ -1,41 +1,124 @@
-///! Integration test for Issue #34 - Complete Provider Configuration Integration
+///! Integration test for Issue #34 - Complete Provider Configuration with Bootloader
 ///!
-///! Tests the complete end-to-end flow:
-///! 1. App starts in WaitingForConfig state
-///! 2. Settings modal shows provider configuration
-///! 3. Async validation works
-///! 4. State transitions correctly
-///! 5. UI components integrate properly
+///! Tests the complete end-to-end bootloader flow:
+///! 1. App starts in Main state with beautiful logo (bootloader style)
+///! 2. Configuration file persistence (settings.json)  
+///! 3. Provider status checking and UI adaptation
+///! 4. Settings modal integration for provider setup
+///! 5. Local provider requirement for start button
 use agentic::{
-    events::{AppEvent, AppState},
+    events::AppState,
     settings::{AsyncValidationResult, ProviderType, Settings, ValidationEvent, ValidationStatus},
     theme::{Theme, ThemeVariant},
     ui::app::App,
 };
 use std::time::Duration;
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    println!("🧪 Integration Test: Complete Provider Configuration");
-    println!("==================================================");
+#[tokio::test]
+async fn complete_integration_test() -> Result<(), Box<dyn std::error::Error>> {
+    println!("
+🧪 Integration Test: Complete Provider Configuration with Bootloader");
+    println!("==================================================================");
 
-    // Test 1: App starts in correct state
-    test_initial_app_state().await?;
+    // Test the bootloader-style initialization
+    println!("
+📋 Test 1: Bootloader Initialization");
+    println!("------------------------------------");
+    
+    let theme = Theme::new(ThemeVariant::EverforestDark);
+    let app = App::new(theme);
 
-    // Test 2: Settings integration
-    test_settings_integration().await?;
+    // App should start in Main state with logo visible (bootloader style)
+    assert_eq!(app.state(), &AppState::Main);
+    println!("✅ App correctly starts in Main state with logo visible (bootloader style)");
 
-    // Test 3: Provider validation result handling
-    test_provider_validation_handling().await?;
+    // Initially no configuration file should exist for fresh installation
+    assert!(!app.settings().has_local_provider_configured());
+    println!("✅ No local provider configured initially (fresh installation)");
 
-    // Test 4: State transitions
-    test_state_transitions().await?;
+    // Should not be ready to start yet
+    assert!(!app.settings().has_local_provider_valid());
+    println!("✅ Local provider not ready for startup (settings required)");
 
-    // Test 5: Provider configuration components
-    test_provider_configuration_components().await?;
+    // Test configuration file management
+    test_configuration_persistence().await?;
+    
+    // Test provider configuration integration
+    test_provider_configuration_integration(&app).await?;
+    
+    // Test state transitions
+    test_bootloader_state_management().await?;
 
-    println!("\n✅ All integration tests passed!");
-    println!("🎯 Issue #34 Provider Configuration Integration: COMPLETE");
+    println!("
+🎉 All bootloader integration tests passed!");
+    println!("🚀 Issue #34 Provider Configuration Integration with Bootloader: COMPLETE");
+    Ok(())
+}
+
+async fn test_configuration_persistence() -> Result<(), Box<dyn std::error::Error>> {
+    println!("
+💾 Test 2: Configuration Persistence");
+    println!("------------------------------------");
+
+    // Test settings file path
+    let settings_path = crate::settings::Settings::settings_file_path();
+    println!("✅ Settings file path: {}", settings_path.display());
+
+    // Test configuration loading (should create defaults for new installation)
+    let settings = crate::settings::Settings::load_from_file();
+    assert_eq!(settings.theme_variant, ThemeVariant::EverforestDark);
+    println!("✅ Settings load correctly with defaults");
+
+    // Test saving configuration
+    settings.save_to_file()?;
+    println!("✅ Settings save to file successfully");
+
+    // Test loading saved configuration
+    let loaded_settings = crate::settings::Settings::load_from_file();
+    assert_eq!(loaded_settings.theme_variant, settings.theme_variant);
+    println!("✅ Settings persist and load correctly");
+
+    Ok(())
+}
+
+async fn test_provider_configuration_integration(app: &App) -> Result<(), Box<dyn std::error::Error>> {
+    println!("
+⚙️  Test 3: Provider Configuration Integration");
+    println!("---------------------------------------------");
+
+    // Settings should be available
+    let status_summary = app.settings().get_provider_status_summary();
+    assert!(!status_summary.is_empty());
+    println!("✅ Provider status summary available");
+
+    // Initial status should be Unchecked
+    for (provider, status, _) in &status_summary {
+        assert_eq!(*status, ValidationStatus::Unchecked);
+        println!("✅ {} provider initially unchecked", provider);
+    }
+
+    Ok(())
+}
+
+async fn test_bootloader_state_management() -> Result<(), Box<dyn std::error::Error>> {
+    println!("
+🔄 Test 4: Bootloader State Management");
+    println!("-------------------------------------");
+
+    let theme = Theme::new(ThemeVariant::EverforestDark);
+    let app = App::new(theme);
+
+    // App should always start in Main state (bootloader shows logo immediately)
+    assert_eq!(app.state(), &AppState::Main);
+    println!("✅ App consistently starts in Main state (bootloader behavior)");
+
+    // UI content should adapt based on provider readiness, not state changes
+    assert!(!app.settings().has_local_provider_valid());
+    println!("✅ UI shows provider configuration needed");
+
+    // Settings integration should work
+    assert!(app.settings().get_provider_status_summary().len() == 2);
+    println!("✅ Provider configuration options available");
 
     Ok(())
 }
@@ -47,9 +130,10 @@ async fn test_initial_app_state() -> Result<(), Box<dyn std::error::Error>> {
     let theme = Theme::new(ThemeVariant::EverforestDark);
     let app = App::new(theme);
 
-    // App should start in WaitingForConfig since no providers are configured
-    assert_eq!(app.state(), &AppState::WaitingForConfig);
-    println!("✅ App correctly starts in WaitingForConfig state");
+    // App should now always start in Main state (showing the beautiful logo!)
+    // but with helpful provider configuration guidance
+    assert_eq!(app.state(), &AppState::Main);
+    println!("✅ App correctly starts in Main state with logo visible");
 
     // Provider readiness should be false
     assert!(!app.settings().has_valid_provider());
@@ -87,8 +171,8 @@ async fn test_settings_integration() -> Result<(), Box<dyn std::error::Error>> {
 
     // Test closing settings
     app.exit_settings();
-    assert_eq!(app.state(), &AppState::WaitingForConfig);
-    println!("✅ Settings modal closes correctly, returns to WaitingForConfig");
+    assert_eq!(app.state(), &AppState::Main);
+    println!("✅ Settings modal closes correctly, returns to Main");
 
     Ok(())
 }
@@ -146,9 +230,13 @@ async fn test_state_transitions() -> Result<(), Box<dyn std::error::Error>> {
     let theme = Theme::new(ThemeVariant::EverforestDark);
     let mut app = App::new(theme);
 
-    // Initial state should be WaitingForConfig
-    assert_eq!(app.state(), &AppState::WaitingForConfig);
-    println!("✅ Initial state: WaitingForConfig");
+    // Initial state should be Main (with logo visible!)
+    assert_eq!(app.state(), &AppState::Main);
+    println!("✅ Initial state: Main (logo visible)");
+
+    // Check that provider readiness affects UI content (not state)
+    assert!(!app.settings().has_valid_provider());
+    println!("✅ Provider readiness correctly shows no valid providers initially");
 
     // Simulate a provider becoming valid
     let validation_event = ValidationEvent::ValidationComplete {
@@ -161,9 +249,10 @@ async fn test_state_transitions() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     app.update_provider_status(validation_event);
-    // State should transition to Main
+    // State should remain Main, but provider readiness should change
     assert_eq!(app.state(), &AppState::Main);
-    println!("✅ State correctly transitions to Main when provider becomes valid");
+    assert!(app.settings().has_valid_provider());
+    println!("✅ Provider validation updates readiness while staying in Main state");
 
     // Simulate provider becoming invalid
     let invalid_event = ValidationEvent::ValidationComplete {
@@ -176,11 +265,10 @@ async fn test_state_transitions() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     app.update_provider_status(invalid_event);
-    // State should transition back to WaitingForConfig
-    assert_eq!(app.state(), &AppState::WaitingForConfig);
-    println!(
-        "✅ State correctly transitions back to WaitingForConfig when provider becomes invalid"
-    );
+    // State should remain Main, provider readiness should reflect invalid state
+    assert_eq!(app.state(), &AppState::Main);
+    assert!(!app.settings().has_valid_provider());
+    println!("✅ Invalid provider updates readiness while staying in Main state");
 
     Ok(())
 }

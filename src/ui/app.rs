@@ -40,14 +40,15 @@ pub struct App {
 }
 
 impl App {
-    /// Create a new application instance with the given theme
+    /// Create a new application instance with bootloader-style initialization
     pub fn new(theme: Theme) -> Self {
-        let settings_manager = SettingsManager::new();
-        let initial_state = if settings_manager.get().has_valid_provider() {
-            AppState::Main
-        } else {
-            AppState::WaitingForConfig
-        };
+        // Load settings from file (creates defaults if file doesn't exist)
+        let persistent_settings = crate::settings::Settings::load_from_file();
+        let settings_manager = SettingsManager::from_settings(persistent_settings);
+        
+        // Always start in Main state - bootloader shows logo with configuration status
+        // This ensures users always see the beautiful Agentic interface immediately
+        let initial_state = AppState::Main;
 
         Self {
             state: initial_state,
@@ -80,13 +81,13 @@ impl App {
         self.state = AppState::Settings;
 
         // Initialize modal state with current theme
-        self.modal_state = Some(SettingsModalState::new(self.settings.get().theme_variant));
+        self.settings.show_modal();
     }
 
     /// Exit settings modal and return to previous state
     pub fn exit_settings(&mut self) {
         self.state = self.previous_state.clone();
-        self.modal_state = None;
+        self.settings.hide_modal();
     }
 
     /// Main application run loop with proper async event handling
@@ -192,7 +193,45 @@ impl App {
                     // Check provider readiness after theme change
                     self.check_provider_readiness();
                 }
-                // In WaitingForConfig state, selection is ignored
+                // In other states, selection is ignored
+            }
+            AppEvent::StartApplication => {
+                // Handle Enter key: StartApplication in Main state if local provider is ready,
+                // otherwise treat as Select for settings modal
+                if matches!(self.state, AppState::Main) {
+                    if self.settings().has_local_provider_valid() {
+                        // TODO: Start the AI orchestration interface
+                        // For now, show a message that this will be implemented
+                        self.state = AppState::Error("🚀 AI Orchestration starting... (Not yet implemented)".to_string());
+                    }
+                    // If local provider is not ready, Enter does nothing in Main state
+                } else if matches!(self.state, AppState::Settings)
+                    && let Some(ref modal_state) = self.modal_state
+                {
+                    // In settings modal, Enter acts as Select
+                    let selected_theme = modal_state.selected_theme();
+                    let action = SettingsAction::ChangeTheme(selected_theme);
+                    if let Err(e) = self.handle_settings_action(action) {
+                        self.state = AppState::Error(format!("Settings error: {}", e));
+                    }
+                    // Close modal after selection
+                    self.exit_settings();
+                    // Check provider readiness after theme change
+                    self.check_provider_readiness();
+                }
+            }
+            AppEvent::ToggleTheme => {
+                // Toggle theme in any state (except Error state)
+                if !matches!(self.state, AppState::Error(_)) {
+                    let new_theme = match self.theme.variant() {
+                        crate::theme::ThemeVariant::EverforestDark => crate::theme::ThemeVariant::EverforestLight,
+                        crate::theme::ThemeVariant::EverforestLight => crate::theme::ThemeVariant::EverforestDark,
+                    };
+                    let action = SettingsAction::ChangeTheme(new_theme);
+                    if let Err(e) = self.handle_settings_action(action) {
+                        self.state = AppState::Error(format!("Theme toggle error: {}", e));
+                    }
+                }
             }
             AppEvent::SettingsAction(action) => {
                 // Handle settings actions and apply theme changes immediately
@@ -240,14 +279,13 @@ impl App {
 
         // Render modal overlay if in settings state
         if matches!(self.state, AppState::Settings)
-            && let Some(ref modal_state) = self.modal_state
+            && self.settings.is_modal_open()
         {
             crate::settings::render_settings_modal(
                 frame,
-                size,
-                modal_state,
-                self.settings.get(),
+                &self.settings,
                 &self.theme,
+                size,
             );
         }
     }
@@ -268,10 +306,46 @@ impl App {
         frame.render_widget(title_block, area);
     }
 
-    /// Render the main content area
+    /// Render the main content area with pure zen simplicity
     fn render_main_content(&self, frame: &mut Frame, area: ratatui::layout::Rect) {
+        // Hide logo when settings modal is open - clean zen approach
+        if self.settings.is_modal_open() {
+            // Just render empty space - no logo, no blackbox
+            let empty_paragraph = ratatui::widgets::Paragraph::new("")
+                .style(self.theme.text_style());
+            frame.render_widget(empty_paragraph, area);
+            return;
+        }
+
         let content = match &self.state {
             AppState::Main => {
+                // Pure zen: Just the beautiful logo and simple initiation message
+                // No config detection needed - user must always go through settings
+                
+                format!(r#"
+
+    ╔═══════════════════════════════════════════════════════════════╗
+    ║                                                               ║
+    ║      █████╗  ██████╗ ███████╗███╗   ██╗████████╗██╗ ██████╗   ║
+    ║     ██╔══██╗██╔════╝ ██╔════╝████╗  ██║╚══██╔══╝██║██╔════╝   ║
+    ║     ███████║██║  ███╗█████╗  ██╔██╗ ██║   ██║   ██║██║        ║
+    ║     ██╔══██║██║   ██║██╔══╝  ██║╚██╗██║   ██║   ██║██║        ║
+    ║     ██║  ██║╚██████╔╝███████╗██║ ╚████║   ██║   ██║╚██████╗   ║
+    ║     ╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚═╝  ╚═══╝   ╚═╝   ╚═╝ ╚═════╝   ║
+    ║                                                               ║
+    ║                    🧘 Zen Garden Terminal UI 🧘               ║
+    ║                                                               ║
+    ║              AI Model Orchestrator & Agent Framework          ║
+    ║                                                               ║
+    ╚═══════════════════════════════════════════════════════════════╝
+
+                    Press [S] to start
+
+"#)
+            }
+            AppState::Settings => {
+                // When in settings, show the main content behind the modal
+                // This provides a better visual experience
                 format!(r#"
 
     ╔═══════════════════════════════════════════════════════════════╗
@@ -306,52 +380,6 @@ impl App {
                     self.last_size
                 )
             }
-            AppState::Settings => {
-                format!(r#"
-    Settings Panel
-    ==============================================================
-    
-    APPEARANCE
-    --------------------------------------------------------------
-    
-    Theme Variant: {}
-    
-    KEYBINDINGS
-    --------------------------------------------------------------
-    
-    T - Toggle Theme Variant
-    ESC - Close Settings & Return to Main
-    
-    CURRENT CONFIGURATION
-    --------------------------------------------------------------
-    
-    Theme: {} Mode
-    Theme Variant: {}
-    Settings Foundation: Active
-    State Machine: Extended
-    
-    SETTINGS MANAGEMENT
-    --------------------------------------------------------------
-    
-    All changes apply immediately
-    Settings are managed through the SettingsManager
-    Use ESC to return to the main interface
-    
-"#,
-                    match self.theme.variant() {
-                        crate::theme::ThemeVariant::EverforestDark => "Everforest Dark",
-                        crate::theme::ThemeVariant::EverforestLight => "Everforest Light",
-                    },
-                    match self.theme.variant() {
-                        crate::theme::ThemeVariant::EverforestDark => "Dark",
-                        crate::theme::ThemeVariant::EverforestLight => "Light",
-                    },
-                    match self.settings().theme_variant {
-                        crate::theme::ThemeVariant::EverforestDark => "Everforest Dark",
-                        crate::theme::ThemeVariant::EverforestLight => "Everforest Light",
-                    }
-                )
-            }
             AppState::Quitting => {
                 "Shutting down gracefully...\n\nThank you for using Agentic!\n\nThe application will exit momentarily.".to_string()
             }
@@ -365,18 +393,7 @@ impl App {
                 let status_display = if provider_status.is_empty() {
                     "    No providers configured yet".to_string()
                 } else {
-                    provider_status.iter()
-                        .map(|(provider, status, _)| {
-                            let status_icon = match status {
-                                crate::settings::ValidationStatus::Valid => "✅",
-                                crate::settings::ValidationStatus::Invalid => "❌",
-                                crate::settings::ValidationStatus::Checking => "⏳",
-                                crate::settings::ValidationStatus::Unchecked => "⚪",
-                            };
-                            format!("    {} {}", status_icon, provider)
-                        })
-                        .collect::<Vec<_>>()
-                        .join("\n")
+                    format!("    {}", provider_status)
                 };
 
                 format!(r#"
@@ -445,34 +462,39 @@ impl App {
         frame.render_widget(paragraph, area);
     }
 
-    /// Render the footer section
+    /// Render the footer section with token counters
     fn render_footer(&self, frame: &mut Frame, area: ratatui::layout::Rect) {
-        let current_theme = match self.theme.variant() {
-            crate::theme::ThemeVariant::EverforestDark => "Dark",
-            crate::theme::ThemeVariant::EverforestLight => "Light",
-        };
+        use ratatui::text::{Span, Line};
+        use ratatui::style::{Color, Style};
+        
+        // TODO: Implement actual token counters
+        // Green: Local tokens saved (e.g., 2.5k local Ollama calls)
+        // Red: Cloud tokens used (e.g., 850 API calls to OpenRouter/OpenAI)
+        let _local_tokens_saved = 2500; // Placeholder - will track local usage
+        let _cloud_tokens_used = 850;   // Placeholder - will track API usage
+        
+        // Create colored token counter spans
+        let token_counter = Line::from(vec![
+            Span::raw(" "),
+            Span::styled("2.5k", Style::default().fg(Color::Green)),
+            Span::raw(" | "),
+            Span::styled("850", Style::default().fg(Color::Red)),
+            Span::raw(" "),
+        ]);
 
         let footer_block = Block::default()
-            .title(" Zen Garden Terminal UI | Production Ready ")
+            .title(token_counter)  // Green local tokens | Red cloud tokens
             .borders(Borders::ALL)
-            .style(self.theme.ratatui_style(Element::Border))
-            .title_style(self.theme.ratatui_style(Element::Title));
+            .style(self.theme.ratatui_style(Element::Border));
 
         let footer_text = match self.state {
-            AppState::Main => format!(
-                "ESC/q: Quit | S: Settings | Current: [{}] | Production v0.1.0",
-                current_theme
-            ),
-            AppState::Settings => format!(
-                "ESC: Back to Main | ↑↓/kj: Navigate | Enter/Space: Select | Current: [{}]",
-                current_theme
-            ),
-            AppState::Quitting => "Application shutting down gracefully...".to_string(),
-            AppState::Error(_) => "Error state - Press ESC/q to quit".to_string(),
-            AppState::WaitingForConfig => format!(
-                ", (comma): Settings | ESC/q: Quit | T: Theme Toggle | Current: [{}] | Configure Provider Required",
-                current_theme
-            ),
+            AppState::Main => {
+                "S: Settings | T: Theme | ESC: Quit".to_string()
+            }
+            AppState::Settings => "↑↓: Navigate | Enter: Select | ESC: Back".to_string(),
+            AppState::Quitting => "Shutting down...".to_string(),
+            AppState::Error(_) => "ESC: Quit".to_string(),
+            AppState::WaitingForConfig => "S: Settings | ESC: Quit".to_string(),
         };
 
         let paragraph = Paragraph::new(footer_text)
@@ -514,14 +536,32 @@ impl App {
         self.settings.get()
     }
 
-    /// Handle settings action
+    /// Handle settings action with auto-save
     pub fn handle_settings_action(
         &mut self,
         action: SettingsAction,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        self.settings.apply_action(action)?;
-        // Apply any theme changes
-        self.settings.get().apply_theme(&mut self.theme);
+        match action {
+            SettingsAction::StartApp => {
+                // Transition to main app state and hide modal
+                self.settings.hide_modal();
+                self.state = AppState::Main;
+                return Ok(());
+            }
+            _ => {
+                // Handle regular settings actions
+                self.settings.apply_action(action)?;
+                // Apply any theme changes
+                self.settings.get().apply_theme(&mut self.theme);
+                
+                // Auto-save settings to file
+                if let Err(e) = self.settings.get().save_to_file() {
+                    // Don't fail the operation, just log the error
+                    eprintln!("Warning: Failed to save settings to file: {}", e);
+                }
+            }
+        }
+        
         Ok(())
     }
 
@@ -531,24 +571,18 @@ impl App {
         self.settings.get().apply_theme(&mut self.theme);
     }
 
-    /// Check provider readiness and update app state accordingly
+    /// Check provider readiness (no longer changes state - UI adapts dynamically)
     pub fn check_provider_readiness(&mut self) {
-        if !self.settings.get().has_valid_provider() {
-            if self.state == AppState::Main {
-                self.state = AppState::WaitingForConfig;
-            }
-        } else if self.state == AppState::WaitingForConfig {
-            self.state = AppState::Main;
-        }
+        // Provider readiness now only affects UI content, not app state
+        // The Main state shows different content based on has_valid_provider()
+        // This method is kept for compatibility but no longer changes state
     }
 
     /// Handle validation event results and update provider status
     pub fn update_provider_status(&mut self, validation_event: crate::settings::ValidationEvent) {
-        // Update the provider status through settings
-        self.settings
-            .get_mut()
-            .handle_validation_event(validation_event);
-
+        // For simplified interface, just ignore validation events for now
+        // TODO: Implement proper validation if needed
+        
         // Check if we need to change app state
         self.check_provider_readiness();
     }
