@@ -50,7 +50,7 @@ pub enum ProviderField {
 pub struct InputState {
     pub editing_field: Option<ProviderField>,
     pub input_buffer: String,
-    pub original_value: String,  // For ESC cancellation
+    pub original_value: String, // For ESC cancellation
     pub cursor_position: usize,
 }
 
@@ -64,7 +64,7 @@ impl InputState {
             cursor_position: 0,
         }
     }
-    
+
     /// Reset input state to not editing
     pub fn none() -> Self {
         Self {
@@ -74,18 +74,18 @@ impl InputState {
             cursor_position: 0,
         }
     }
-    
+
     /// Check if currently editing
     pub fn is_editing(&self) -> bool {
         self.editing_field.is_some()
     }
-    
+
     /// Add character to input buffer
     pub fn add_char(&mut self, c: char) {
         self.input_buffer.insert(self.cursor_position, c);
         self.cursor_position += 1;
     }
-    
+
     /// Remove character from input buffer (backspace)
     pub fn remove_char(&mut self) {
         if self.cursor_position > 0 {
@@ -93,7 +93,7 @@ impl InputState {
             self.input_buffer.remove(self.cursor_position);
         }
     }
-    
+
     /// Cancel editing and revert to original value
     pub fn cancel(&mut self) {
         self.input_buffer = self.original_value.clone();
@@ -113,16 +113,16 @@ pub fn mask_api_key(key: &str) -> String {
     if key.len() <= 13 {
         return "*".repeat(key.len());
     }
-    
-    let start = &key[..10];  // First 10 characters
-    let end = &key[key.len()-3..];  // Last 3 characters
+
+    let start = &key[..10]; // First 10 characters
+    let end = &key[key.len() - 3..]; // Last 3 characters
     format!("{}***...{}", start, end)
 }
 
 /// Unmask API key for editing
 pub fn unmask_for_editing(masked: &str, original: &str) -> String {
     if masked.contains("***") {
-        original.to_string()  // Return full key for editing
+        original.to_string() // Return full key for editing
     } else {
         masked.to_string()
     }
@@ -133,7 +133,7 @@ pub fn validate_local_endpoint(url: &str) -> ValidationResult {
     if url.is_empty() {
         return ValidationResult::Invalid("Endpoint cannot be empty".to_string());
     }
-    
+
     if url.starts_with("http://") || url.starts_with("https://") {
         ValidationResult::Valid
     } else {
@@ -146,11 +146,13 @@ pub fn validate_api_key(key: &str) -> ValidationResult {
     if key.is_empty() {
         return ValidationResult::Invalid("API key cannot be empty".to_string());
     }
-    
+
     if key.starts_with("sk-or-v1-") && key.len() > 20 {
         ValidationResult::Valid
     } else {
-        ValidationResult::Invalid("Invalid API key format (should start with sk-or-v1-)".to_string())
+        ValidationResult::Invalid(
+            "Invalid API key format (should start with sk-or-v1-)".to_string(),
+        )
     }
 }
 
@@ -241,7 +243,7 @@ pub struct Settings {
     pub openrouter_provider: ProviderConfig,
     pub selected_provider_index: usize, // For UI navigation
     pub focused_field: Option<ProviderField>,
-    
+
     // Input state for text editing
     pub input_state: Option<InputState>,
 }
@@ -321,19 +323,20 @@ impl Settings {
         // For new configurations, this will be empty
         self.input_state = Some(InputState::new(field, current_value));
     }
-    
+
     /// Exit edit mode and optionally save changes
     pub fn exit_edit_mode(&mut self, save: bool) {
         if save
             && let Some(input_state) = &self.input_state
-            && let Some(ref field) = input_state.editing_field {
-                let field_clone = field.clone();
-                let buffer_clone = input_state.input_buffer.clone();
-                self.save_field_value(&field_clone, &buffer_clone);
-            }
+            && let Some(ref field) = input_state.editing_field
+        {
+            let field_clone = field.clone();
+            let buffer_clone = input_state.input_buffer.clone();
+            self.save_field_value(&field_clone, &buffer_clone);
+        }
         self.input_state = None;
     }
-    
+
     /// Get the current value of a field
     pub fn get_field_value(&self, field: &ProviderField) -> String {
         match field {
@@ -349,7 +352,7 @@ impl Settings {
             }
         }
     }
-    
+
     /// Save field value from input buffer
     pub fn save_field_value(&mut self, field: &ProviderField, value: &str) {
         match field {
@@ -364,7 +367,7 @@ impl Settings {
             }
         }
     }
-    
+
     /// Navigate to next field in tab order
     pub fn navigate_next_field(&mut self) {
         let fields = [
@@ -373,18 +376,18 @@ impl Settings {
             ProviderField::OpenRouterApiKey,
             ProviderField::SaveButton,
         ];
-        
+
         let current_index = if let Some(ref field) = self.focused_field {
             fields.iter().position(|f| f == field).unwrap_or(0)
         } else {
             // If no field is focused, start before the first field
             fields.len() - 1
         };
-        
+
         let next_index = (current_index + 1) % fields.len();
         self.focused_field = Some(fields[next_index].clone());
     }
-    
+
     /// Navigate to previous field in tab order
     pub fn navigate_previous_field(&mut self) {
         let fields = [
@@ -393,13 +396,13 @@ impl Settings {
             ProviderField::OpenRouterApiKey,
             ProviderField::SaveButton,
         ];
-        
+
         let current_index = if let Some(ref field) = self.focused_field {
             fields.iter().position(|f| f == field).unwrap_or(0)
         } else {
             0
         };
-        
+
         let prev_index = if current_index == 0 {
             fields.len() - 1
         } else {
@@ -407,16 +410,17 @@ impl Settings {
         };
         self.focused_field = Some(fields[prev_index].clone());
     }
-    
+
     /// Validate current input buffer
     pub fn validate_current_input(&self) -> ValidationResult {
         if let Some(ref input_state) = self.input_state
-            && let Some(ref field) = input_state.editing_field {
-                return self.validate_field_value(field, &input_state.input_buffer);
-            }
+            && let Some(ref field) = input_state.editing_field
+        {
+            return self.validate_field_value(field, &input_state.input_buffer);
+        }
         ValidationResult::Valid
     }
-    
+
     /// Validate a field value
     pub fn validate_field_value(&self, field: &ProviderField, value: &str) -> ValidationResult {
         match field {
@@ -425,18 +429,20 @@ impl Settings {
             ProviderField::Theme | ProviderField::SaveButton => ValidationResult::Valid,
         }
     }
-    
+
     /// Check if currently in edit mode
     pub fn is_editing(&self) -> bool {
         self.input_state.as_ref().is_some_and(|s| s.is_editing())
     }
-    
+
     /// Get display value for a field (with masking for API keys)
     pub fn get_display_value(&self, field: &ProviderField) -> String {
         match field {
-            ProviderField::LocalEndpoint => {
-                self.local_provider.endpoint_url.clone().unwrap_or("Not configured".to_string())
-            }
+            ProviderField::LocalEndpoint => self
+                .local_provider
+                .endpoint_url
+                .clone()
+                .unwrap_or("Not configured".to_string()),
             ProviderField::OpenRouterApiKey => {
                 if let Some(ref key) = self.openrouter_provider.api_key {
                     mask_api_key(key)
@@ -444,9 +450,7 @@ impl Settings {
                     "Not configured".to_string()
                 }
             }
-            ProviderField::Theme | ProviderField::SaveButton => {
-                String::new()
-            }
+            ProviderField::Theme | ProviderField::SaveButton => String::new(),
         }
     }
 
@@ -510,7 +514,7 @@ impl Settings {
             SettingsAction::SaveConfiguration => {
                 // TODO: Implement configuration persistence
             }
-            
+
             // Input actions for Issue #31
             SettingsAction::NavigateNextField => {
                 self.navigate_next_field();
@@ -587,37 +591,27 @@ impl Settings {
     pub fn has_configured_provider(&self) -> bool {
         self.local_provider.is_configured() || self.openrouter_provider.is_configured()
     }
-    
+
     /// Handle keyboard input for settings modal
     pub fn handle_key_event(&mut self, key: KeyEvent) -> Option<SettingsAction> {
         // If in edit mode, handle text input
         if self.is_editing() {
             return self.handle_edit_mode_key(key);
         }
-        
+
         // Navigation mode
         match key.code {
-            KeyCode::Tab => {
-                Some(SettingsAction::NavigateNextField)
-            }
-            KeyCode::BackTab => {
-                Some(SettingsAction::NavigatePreviousField)
-            }
-            KeyCode::Down => {
-                Some(SettingsAction::NavigateNextField)
-            }
-            KeyCode::Up => {
-                Some(SettingsAction::NavigatePreviousField)
-            }
+            KeyCode::Tab => Some(SettingsAction::NavigateNextField),
+            KeyCode::BackTab => Some(SettingsAction::NavigatePreviousField),
+            KeyCode::Down => Some(SettingsAction::NavigateNextField),
+            KeyCode::Up => Some(SettingsAction::NavigatePreviousField),
             KeyCode::Enter => {
                 if let Some(ref field) = self.focused_field {
                     match field {
                         ProviderField::LocalEndpoint | ProviderField::OpenRouterApiKey => {
                             Some(SettingsAction::EnterEditMode(field.clone()))
                         }
-                        ProviderField::SaveButton => {
-                            Some(SettingsAction::SaveConfiguration)
-                        }
+                        ProviderField::SaveButton => Some(SettingsAction::SaveConfiguration),
                         ProviderField::Theme => {
                             // Toggle theme
                             let new_theme = match self.theme_variant {
@@ -646,22 +640,16 @@ impl Settings {
             _ => None,
         }
     }
-    
+
     /// Handle keyboard input while in edit mode
     fn handle_edit_mode_key(&mut self, key: KeyEvent) -> Option<SettingsAction> {
         match key.code {
             KeyCode::Enter => {
                 Some(SettingsAction::ExitEditMode(true)) // Save and exit
             }
-            KeyCode::Esc => {
-                Some(SettingsAction::CancelEdit)
-            }
-            KeyCode::Backspace => {
-                Some(SettingsAction::InputBackspace)
-            }
-            KeyCode::Char(c) => {
-                Some(SettingsAction::InputCharacter(c))
-            }
+            KeyCode::Esc => Some(SettingsAction::CancelEdit),
+            KeyCode::Backspace => Some(SettingsAction::InputBackspace),
+            KeyCode::Char(c) => Some(SettingsAction::InputCharacter(c)),
             _ => None,
         }
     }
@@ -687,10 +675,12 @@ impl Settings {
     /// Create local provider section for UI
     fn create_local_provider_section(&self) -> ProviderSection {
         let is_editing_endpoint = matches!(
-            self.input_state.as_ref().and_then(|s| s.editing_field.as_ref()),
+            self.input_state
+                .as_ref()
+                .and_then(|s| s.editing_field.as_ref()),
             Some(ProviderField::LocalEndpoint)
         );
-        
+
         let endpoint_value = if is_editing_endpoint {
             self.input_state.as_ref().unwrap().input_buffer.clone()
         } else {
@@ -717,10 +707,12 @@ impl Settings {
     /// Create OpenRouter provider section for UI
     fn create_openrouter_provider_section(&self) -> ProviderSection {
         let is_editing_api_key = matches!(
-            self.input_state.as_ref().and_then(|s| s.editing_field.as_ref()),
+            self.input_state
+                .as_ref()
+                .and_then(|s| s.editing_field.as_ref()),
             Some(ProviderField::OpenRouterApiKey)
         );
-        
+
         let api_key_value = if is_editing_api_key {
             // Show unmasked value when editing
             self.input_state.as_ref().unwrap().input_buffer.clone()
@@ -800,7 +792,7 @@ pub enum SettingsAction {
     UpdateField(ProviderField, String),
     ValidateProvider(ProviderType),
     SaveConfiguration,
-    
+
     // Input actions for Issue #31
     NavigateNextField,
     NavigatePreviousField,
@@ -1307,10 +1299,10 @@ mod tests {
     #[test]
     fn test_input_state_management() {
         let mut settings = Settings::new();
-        
+
         // Clear the default value first
         settings.local_provider.endpoint_url = None;
-        
+
         // Test entering edit mode
         settings.enter_edit_mode(ProviderField::LocalEndpoint);
         assert!(settings.is_editing());
@@ -1318,25 +1310,19 @@ mod tests {
             settings.input_state.as_ref().unwrap().editing_field,
             Some(ProviderField::LocalEndpoint)
         );
-        
+
         // Test input buffer updates
         settings.handle_action(SettingsAction::InputCharacter('h'));
         settings.handle_action(SettingsAction::InputCharacter('t'));
         settings.handle_action(SettingsAction::InputCharacter('t'));
         settings.handle_action(SettingsAction::InputCharacter('p'));
-        
-        assert_eq!(
-            settings.input_state.as_ref().unwrap().input_buffer,
-            "http"
-        );
-        
+
+        assert_eq!(settings.input_state.as_ref().unwrap().input_buffer, "http");
+
         // Test backspace
         settings.handle_action(SettingsAction::InputBackspace);
-        assert_eq!(
-            settings.input_state.as_ref().unwrap().input_buffer,
-            "htt"
-        );
-        
+        assert_eq!(settings.input_state.as_ref().unwrap().input_buffer, "htt");
+
         // Test save and exit
         settings.handle_action(SettingsAction::ExitEditMode(true));
         assert!(!settings.is_editing());
@@ -1346,24 +1332,27 @@ mod tests {
     #[test]
     fn test_field_navigation() {
         let mut settings = Settings::new();
-        
+
         // Test next field navigation starting from no focus
         settings.navigate_next_field();
         assert_eq!(settings.focused_field, Some(ProviderField::Theme));
-        
+
         settings.navigate_next_field();
         assert_eq!(settings.focused_field, Some(ProviderField::LocalEndpoint));
-        
+
         settings.navigate_next_field();
-        assert_eq!(settings.focused_field, Some(ProviderField::OpenRouterApiKey));
-        
+        assert_eq!(
+            settings.focused_field,
+            Some(ProviderField::OpenRouterApiKey)
+        );
+
         settings.navigate_next_field();
         assert_eq!(settings.focused_field, Some(ProviderField::SaveButton));
-        
+
         // Test wrap around
         settings.navigate_next_field();
         assert_eq!(settings.focused_field, Some(ProviderField::Theme));
-        
+
         // Test previous field navigation
         settings.navigate_previous_field();
         assert_eq!(settings.focused_field, Some(ProviderField::SaveButton));
@@ -1372,25 +1361,28 @@ mod tests {
     #[test]
     fn test_input_validation() {
         let settings = Settings::new();
-        
+
         // Test valid local endpoint
         assert_eq!(
             settings.validate_field_value(&ProviderField::LocalEndpoint, "http://localhost:8080"),
             ValidationResult::Valid
         );
-        
+
         // Test invalid local endpoint
         assert!(matches!(
             settings.validate_field_value(&ProviderField::LocalEndpoint, "invalid-url"),
             ValidationResult::Invalid(_)
         ));
-        
+
         // Test valid API key
         assert_eq!(
-            settings.validate_field_value(&ProviderField::OpenRouterApiKey, "sk-or-v1-1234567890abcdef"),
+            settings.validate_field_value(
+                &ProviderField::OpenRouterApiKey,
+                "sk-or-v1-1234567890abcdef"
+            ),
             ValidationResult::Valid
         );
-        
+
         // Test invalid API key
         assert!(matches!(
             settings.validate_field_value(&ProviderField::OpenRouterApiKey, "invalid-key"),
@@ -1402,13 +1394,13 @@ mod tests {
     fn test_api_key_masking_and_unmasking() {
         // Test short key masking
         assert_eq!(mask_api_key("short"), "*****");
-        
+
         // Test long key masking
         assert_eq!(
             mask_api_key("sk-or-v1-1234567890abcdefghij"),
             "sk-or-v1-1***...hij"
         );
-        
+
         // Test unmasking for editing
         let original = "sk-or-v1-1234567890abcdefghij";
         let masked = mask_api_key(original);
