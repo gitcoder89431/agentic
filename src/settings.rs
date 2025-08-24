@@ -21,18 +21,18 @@ pub enum ProviderType {
 #[derive(Debug, Clone)]
 pub struct ProviderConfig {
     pub provider_type: ProviderType,
-    pub endpoint_url: Option<String>,  // For LOCAL
-    pub api_key: Option<String>,       // For OPENROUTER
+    pub endpoint_url: Option<String>, // For LOCAL
+    pub api_key: Option<String>,      // For OPENROUTER
     pub validation_status: ValidationStatus,
 }
 
 /// Validation status for provider connections
 #[derive(Debug, Clone, PartialEq)]
 pub enum ValidationStatus {
-    Unchecked,   // Initial state
-    Checking,    // Validation in progress
-    Valid,       // ✅ Connection successful
-    Invalid,     // ❌ Connection failed
+    Unchecked, // Initial state
+    Checking,  // Validation in progress
+    Valid,     // ✅ Connection successful
+    Invalid,   // ❌ Connection failed
 }
 
 /// Provider field types for input focus management
@@ -85,7 +85,7 @@ impl ProviderConfig {
             if key.len() <= 13 {
                 "*".repeat(key.len())
             } else {
-                format!("{}...{}", &key[..10], &key[key.len()-3..])
+                format!("{}...{}", &key[..10], &key[key.len() - 3..])
             }
         })
     }
@@ -104,11 +104,11 @@ impl ProviderConfig {
 pub struct Settings {
     /// Current theme variant selection
     pub theme_variant: ThemeVariant,
-    
+
     // Provider configuration
     pub local_provider: ProviderConfig,
     pub openrouter_provider: ProviderConfig,
-    pub selected_provider_index: usize,  // For UI navigation
+    pub selected_provider_index: usize, // For UI navigation
     pub focused_field: Option<ProviderField>,
 }
 
@@ -169,7 +169,7 @@ impl Settings {
             theme_variant: ThemeVariant::EverforestDark,
             local_provider: ProviderConfig::new_local(),
             openrouter_provider: ProviderConfig::new_openrouter(),
-            selected_provider_index: 0,  // Start with Local provider selected
+            selected_provider_index: 0, // Start with Local provider selected
             focused_field: None,
         }
     }
@@ -190,9 +190,9 @@ impl Settings {
                 // This will be handled by SettingsModalState
             }
             SettingsAction::NavigateThemeNext => {
-                // This will be handled by SettingsModalState  
+                // This will be handled by SettingsModalState
             }
-            
+
             // Provider actions
             SettingsAction::NavigateProviderPrevious => {
                 if self.selected_provider_index > 0 {
@@ -213,16 +213,14 @@ impl Settings {
             SettingsAction::FocusField(field) => {
                 self.focused_field = Some(field);
             }
-            SettingsAction::UpdateField(field, value) => {
-                match field {
-                    ProviderField::LocalEndpoint => {
-                        self.local_provider.set_endpoint_url(value);
-                    }
-                    ProviderField::OpenRouterApiKey => {
-                        self.openrouter_provider.set_api_key(value);
-                    }
+            SettingsAction::UpdateField(field, value) => match field {
+                ProviderField::LocalEndpoint => {
+                    self.local_provider.set_endpoint_url(value);
                 }
-            }
+                ProviderField::OpenRouterApiKey => {
+                    self.openrouter_provider.set_api_key(value);
+                }
+            },
             SettingsAction::ValidateProvider(provider_type) => {
                 match provider_type {
                     ProviderType::Local => {
@@ -301,25 +299,28 @@ impl Settings {
         // Validate that at least one provider is configured
         if !self.has_configured_provider() {
             return Err(SettingsError::ValidationFailed(
-                "At least one provider must be configured".to_string()
+                "At least one provider must be configured".to_string(),
             ));
         }
 
         // Validate local provider endpoint URL format if configured
         if let Some(ref url) = self.local_provider.endpoint_url
-            && !url.starts_with("http://") && !url.starts_with("https://") {
-                return Err(SettingsError::ValidationFailed(
-                    "Local endpoint must be a valid HTTP/HTTPS URL".to_string()
-                ));
-            }
+            && !url.starts_with("http://")
+            && !url.starts_with("https://")
+        {
+            return Err(SettingsError::ValidationFailed(
+                "Local endpoint must be a valid HTTP/HTTPS URL".to_string(),
+            ));
+        }
 
         // Validate OpenRouter API key format if configured
         if let Some(ref key) = self.openrouter_provider.api_key
-            && key.trim().is_empty() {
-                return Err(SettingsError::ValidationFailed(
-                    "OpenRouter API key cannot be empty".to_string()
-                ));
-            }
+            && key.trim().is_empty()
+        {
+            return Err(SettingsError::ValidationFailed(
+                "OpenRouter API key cannot be empty".to_string(),
+            ));
+        }
 
         Ok(())
     }
@@ -338,7 +339,7 @@ pub enum SettingsAction {
     ChangeTheme(ThemeVariant),
     NavigateThemePrevious,
     NavigateThemeNext,
-    
+
     // Provider actions
     NavigateProviderPrevious,
     NavigateProviderNext,
@@ -613,30 +614,42 @@ mod tests {
         assert_eq!(local_config.validation_status, ValidationStatus::Unchecked);
 
         let openrouter_config = ProviderConfig::new_openrouter();
-        assert!(matches!(openrouter_config.provider_type, ProviderType::OpenRouter));
+        assert!(matches!(
+            openrouter_config.provider_type,
+            ProviderType::OpenRouter
+        ));
         assert!(openrouter_config.endpoint_url.is_none());
         assert!(openrouter_config.api_key.is_none());
-        assert_eq!(openrouter_config.validation_status, ValidationStatus::Unchecked);
+        assert_eq!(
+            openrouter_config.validation_status,
+            ValidationStatus::Unchecked
+        );
     }
 
     #[test]
     fn test_provider_config_updates() {
         let mut local_config = ProviderConfig::new_local();
         local_config.set_endpoint_url("http://localhost:8080".to_string());
-        assert_eq!(local_config.endpoint_url.as_ref().unwrap(), "http://localhost:8080");
+        assert_eq!(
+            local_config.endpoint_url.as_ref().unwrap(),
+            "http://localhost:8080"
+        );
         assert_eq!(local_config.validation_status, ValidationStatus::Unchecked);
 
         let mut openrouter_config = ProviderConfig::new_openrouter();
         openrouter_config.set_api_key("sk-or-test123".to_string());
         assert_eq!(openrouter_config.api_key.as_ref().unwrap(), "sk-or-test123");
-        assert_eq!(openrouter_config.validation_status, ValidationStatus::Unchecked);
+        assert_eq!(
+            openrouter_config.validation_status,
+            ValidationStatus::Unchecked
+        );
     }
 
     #[test]
     fn test_api_key_masking() {
         let mut config = ProviderConfig::new_openrouter();
         config.set_api_key("sk-or-123456789012345".to_string());
-        
+
         let masked = config.get_masked_api_key().unwrap();
         assert_eq!(masked, "sk-or-1234...345");
 
@@ -649,7 +662,7 @@ mod tests {
     #[test]
     fn test_provider_configuration_actions() {
         let mut settings = Settings::new();
-        
+
         // Test provider navigation
         assert_eq!(settings.selected_provider_index, 0);
         settings.handle_action(SettingsAction::NavigateProviderNext);
@@ -659,22 +672,28 @@ mod tests {
 
         // Test field updates
         settings.handle_action(SettingsAction::UpdateField(
-            ProviderField::LocalEndpoint, 
-            "http://localhost:9090".to_string()
+            ProviderField::LocalEndpoint,
+            "http://localhost:9090".to_string(),
         ));
-        assert_eq!(settings.local_provider.endpoint_url.as_ref().unwrap(), "http://localhost:9090");
+        assert_eq!(
+            settings.local_provider.endpoint_url.as_ref().unwrap(),
+            "http://localhost:9090"
+        );
 
         settings.handle_action(SettingsAction::UpdateField(
-            ProviderField::OpenRouterApiKey, 
-            "test-key-123".to_string()
+            ProviderField::OpenRouterApiKey,
+            "test-key-123".to_string(),
         ));
-        assert_eq!(settings.openrouter_provider.api_key.as_ref().unwrap(), "test-key-123");
+        assert_eq!(
+            settings.openrouter_provider.api_key.as_ref().unwrap(),
+            "test-key-123"
+        );
     }
 
     #[test]
     fn test_provider_validation() {
         let mut settings = Settings::new();
-        
+
         // Should fail validation - no providers configured beyond defaults
         settings.local_provider.endpoint_url = None;
         settings.openrouter_provider.api_key = None;

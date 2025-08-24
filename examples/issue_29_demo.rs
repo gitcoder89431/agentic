@@ -2,11 +2,8 @@
 //!
 //! Demonstrates the new provider configuration system for LOCAL and OPENROUTER providers.
 
-use agentic::{
-    settings::{
-        Settings, SettingsAction, ProviderConfig, ProviderField, 
-        ValidationStatus
-    },
+use agentic::settings::{
+    ProviderConfig, ProviderField, Settings, SettingsAction, ValidationStatus,
 };
 
 fn main() {
@@ -18,56 +15,90 @@ fn main() {
     // 1. Create settings with provider configurations
     println!("1. Creating settings with default provider configurations...");
     let mut settings = Settings::new();
-    
-    println!("   Local provider configured: {}", settings.local_provider.is_configured());
-    println!("   OpenRouter provider configured: {}", settings.openrouter_provider.is_configured());
-    println!("   Selected provider: {}", settings.get_provider_name(settings.selected_provider_index));
+
+    println!(
+        "   Local provider configured: {}",
+        settings.local_provider.is_configured()
+    );
+    println!(
+        "   OpenRouter provider configured: {}",
+        settings.openrouter_provider.is_configured()
+    );
+    println!(
+        "   Selected provider: {}",
+        settings.get_provider_name(settings.selected_provider_index)
+    );
 
     // 2. Test provider type creation
     println!("\n2. Testing provider configuration types...");
     let local_config = ProviderConfig::new_local();
     let openrouter_config = ProviderConfig::new_openrouter();
-    
+
     println!("   Local default endpoint: {:?}", local_config.endpoint_url);
     println!("   Local API key: {:?}", local_config.api_key);
-    println!("   OpenRouter endpoint: {:?}", openrouter_config.endpoint_url);
+    println!(
+        "   OpenRouter endpoint: {:?}",
+        openrouter_config.endpoint_url
+    );
     println!("   OpenRouter API key: {:?}", openrouter_config.api_key);
 
     // 3. Test validation status system
     println!("\n3. Testing validation status system...");
     for status in [
         ValidationStatus::Unchecked,
-        ValidationStatus::Checking, 
+        ValidationStatus::Checking,
         ValidationStatus::Valid,
-        ValidationStatus::Invalid
+        ValidationStatus::Invalid,
     ] {
-        println!("   Status: {:?} → Icon: {}", status, Settings::get_validation_status_icon(&status));
+        println!(
+            "   Status: {:?} → Icon: {}",
+            status,
+            Settings::get_validation_status_icon(&status)
+        );
     }
 
     // 4. Test field updates
     println!("\n4. Testing field update actions...");
     settings.handle_action(SettingsAction::UpdateField(
         ProviderField::LocalEndpoint,
-        "http://localhost:8080".to_string()
+        "http://localhost:8080".to_string(),
     ));
-    println!("   Updated local endpoint: {:?}", settings.local_provider.endpoint_url);
+    println!(
+        "   Updated local endpoint: {:?}",
+        settings.local_provider.endpoint_url
+    );
 
     settings.handle_action(SettingsAction::UpdateField(
         ProviderField::OpenRouterApiKey,
-        "sk-or-demo123456789012345".to_string()
+        "sk-or-demo123456789012345".to_string(),
     ));
-    println!("   Updated OpenRouter API key: {:?}", settings.openrouter_provider.api_key);
-    println!("   Masked API key display: {:?}", settings.openrouter_provider.get_masked_api_key());
+    println!(
+        "   Updated OpenRouter API key: {:?}",
+        settings.openrouter_provider.api_key
+    );
+    println!(
+        "   Masked API key display: {:?}",
+        settings.openrouter_provider.get_masked_api_key()
+    );
 
     // 5. Test provider navigation
     println!("\n5. Testing provider navigation...");
-    println!("   Current provider index: {}", settings.selected_provider_index);
+    println!(
+        "   Current provider index: {}",
+        settings.selected_provider_index
+    );
     settings.handle_action(SettingsAction::NavigateProviderNext);
-    println!("   After next: {} ({})", settings.selected_provider_index, 
-             settings.get_provider_name(settings.selected_provider_index));
+    println!(
+        "   After next: {} ({})",
+        settings.selected_provider_index,
+        settings.get_provider_name(settings.selected_provider_index)
+    );
     settings.handle_action(SettingsAction::NavigateProviderNext);
-    println!("   After next (wrap): {} ({})", settings.selected_provider_index,
-             settings.get_provider_name(settings.selected_provider_index));
+    println!(
+        "   After next (wrap): {} ({})",
+        settings.selected_provider_index,
+        settings.get_provider_name(settings.selected_provider_index)
+    );
 
     // 6. Test validation
     println!("\n6. Testing configuration validation...");
@@ -90,7 +121,10 @@ fn main() {
     let mut secure_config = ProviderConfig::new_openrouter();
     secure_config.set_api_key("sk-or-very-long-secret-key-12345".to_string());
     println!("   Full key: {:?}", secure_config.api_key);
-    println!("   Masked display: {:?}", secure_config.get_masked_api_key());
+    println!(
+        "   Masked display: {:?}",
+        secure_config.get_masked_api_key()
+    );
 
     println!("\n🎯 Success Criteria Verification:");
     println!("✅ Provider configuration data structures defined");
