@@ -323,7 +323,9 @@ impl Settings {
 
     /// Create local provider section for UI
     fn create_local_provider_section(&self) -> ProviderSection {
-        let endpoint_value = self.local_provider.endpoint_url
+        let endpoint_value = self
+            .local_provider
+            .endpoint_url
             .as_ref()
             .unwrap_or(&"Not configured".to_string())
             .clone();
@@ -338,7 +340,8 @@ impl Settings {
 
         ProviderSection {
             title: "LOCAL Provider".to_string(),
-            status_icon: Self::get_validation_status_icon(&self.local_provider.validation_status).to_string(),
+            status_icon: Self::get_validation_status_icon(&self.local_provider.validation_status)
+                .to_string(),
             fields: vec![endpoint_field],
             is_focused: self.selected_provider_index == 0,
         }
@@ -347,7 +350,9 @@ impl Settings {
     /// Create OpenRouter provider section for UI
     fn create_openrouter_provider_section(&self) -> ProviderSection {
         let api_key_value = if let Some(ref key) = self.openrouter_provider.api_key {
-            self.openrouter_provider.get_masked_api_key().unwrap_or_else(|| key.clone())
+            self.openrouter_provider
+                .get_masked_api_key()
+                .unwrap_or_else(|| key.clone())
         } else {
             "Not configured".to_string()
         };
@@ -362,7 +367,10 @@ impl Settings {
 
         ProviderSection {
             title: "OPENROUTER Provider".to_string(),
-            status_icon: Self::get_validation_status_icon(&self.openrouter_provider.validation_status).to_string(),
+            status_icon: Self::get_validation_status_icon(
+                &self.openrouter_provider.validation_status,
+            )
+            .to_string(),
             fields: vec![api_key_field],
             is_focused: self.selected_provider_index == 1,
         }
@@ -590,13 +598,13 @@ pub fn render_settings_modal(
 /// Render provider configuration sections
 fn render_provider_sections(f: &mut Frame, area: Rect, settings: &Settings, theme: &Theme) {
     let provider_sections = settings.get_provider_sections();
-    
+
     // Split area for each provider section
     let section_constraints: Vec<Constraint> = provider_sections
         .iter()
         .map(|_| Constraint::Length(4)) // Each provider section takes 4 lines
         .collect();
-    
+
     let section_layout = Layout::default()
         .direction(Direction::Vertical)
         .constraints(section_constraints)
@@ -627,7 +635,7 @@ fn render_provider_section(f: &mut Frame, area: Rect, section: &ProviderSection,
     } else {
         theme.text_style()
     };
-    
+
     let title_line = format!("  {}    {}", section.title, section.status_icon);
     let title_paragraph = Paragraph::new(title_line)
         .style(title_style)
@@ -678,7 +686,12 @@ fn add_underline(text: &str) -> String {
 }
 
 /// Render theme selection section (moved to bottom as requested)
-fn render_theme_selection(f: &mut Frame, area: Rect, modal_state: &SettingsModalState, theme: &Theme) {
+fn render_theme_selection(
+    f: &mut Frame,
+    area: Rect,
+    modal_state: &SettingsModalState,
+    theme: &Theme,
+) {
     // Layout for theme section
     let theme_layout = Layout::default()
         .direction(Direction::Vertical)
@@ -702,8 +715,16 @@ fn render_theme_selection(f: &mut Frame, area: Rect, modal_state: &SettingsModal
 
     let theme_line = format!(
         "  [{}] ← → [{}]",
-        if current_theme_name == "Dark" { "●Dark" } else { "Dark" },
-        if current_theme_name == "Light" { "●Light" } else { "Light" }
+        if current_theme_name == "Dark" {
+            "●Dark"
+        } else {
+            "Dark"
+        },
+        if current_theme_name == "Light" {
+            "●Light"
+        } else {
+            "Light"
+        }
     );
 
     let theme_selection = Paragraph::new(theme_line)

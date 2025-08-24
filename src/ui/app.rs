@@ -224,7 +224,13 @@ impl App {
         if matches!(self.state, AppState::Settings)
             && let Some(ref modal_state) = self.modal_state
         {
-            crate::settings::render_settings_modal(frame, size, modal_state, self.settings.get(), &self.theme);
+            crate::settings::render_settings_modal(
+                frame,
+                size,
+                modal_state,
+                self.settings.get(),
+                &self.theme,
+            );
         }
     }
 
