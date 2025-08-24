@@ -4,6 +4,11 @@
 //! Provides clean separation of concerns and prepares for future feature expansion.
 
 use crate::theme::{Theme, ThemeVariant};
+use ratatui::{
+    Frame,
+    layout::{Alignment, Constraint, Direction, Layout, Rect},
+    widgets::{Block, Borders, Clear, List, ListItem, Paragraph},
+};
 
 /// Core settings structure with extensible design
 #[derive(Debug, Clone)]
@@ -15,6 +20,56 @@ pub struct Settings {
     // pub model_configs: ModelConfig,
     // pub keybinds: KeyBindConfig,
     // pub advanced: AdvancedConfig,
+}
+
+/// Settings modal state for UI navigation
+#[derive(Debug, Clone)]
+pub struct SettingsModalState {
+    /// Currently selected theme index in the modal
+    pub selected_theme_index: usize,
+    /// Available theme variants for selection
+    pub available_themes: Vec<ThemeVariant>,
+}
+
+impl SettingsModalState {
+    /// Create a new modal state with current theme selected
+    pub fn new(current_theme: ThemeVariant) -> Self {
+        let available_themes = vec![ThemeVariant::EverforestDark, ThemeVariant::EverforestLight];
+        let selected_theme_index = available_themes
+            .iter()
+            .position(|&t| t == current_theme)
+            .unwrap_or(0);
+
+        Self {
+            selected_theme_index,
+            available_themes,
+        }
+    }
+
+    /// Navigate up in the theme selection
+    pub fn navigate_up(&mut self) {
+        if self.selected_theme_index > 0 {
+            self.selected_theme_index -= 1;
+        } else {
+            // Wrap to bottom
+            self.selected_theme_index = self.available_themes.len() - 1;
+        }
+    }
+
+    /// Navigate down in the theme selection
+    pub fn navigate_down(&mut self) {
+        if self.selected_theme_index < self.available_themes.len() - 1 {
+            self.selected_theme_index += 1;
+        } else {
+            // Wrap to top
+            self.selected_theme_index = 0;
+        }
+    }
+
+    /// Get the currently selected theme variant
+    pub fn selected_theme(&self) -> ThemeVariant {
+        self.available_themes[self.selected_theme_index]
+    }
 }
 
 impl Settings {
@@ -187,6 +242,99 @@ impl SettingsManager {
     // pub fn load_from_file(&mut self, path: &Path) -> Result<(), SettingsError>
     // pub fn save_to_file(&self, path: &Path) -> Result<(), SettingsError>
     // pub fn auto_save(&self) -> Result<(), SettingsError>
+}
+
+/// Render the settings modal as a centered popup
+pub fn render_settings_modal(
+    f: &mut Frame,
+    area: Rect,
+    modal_state: &SettingsModalState,
+    theme: &Theme,
+) {
+    // Create a centered modal area
+    let modal_area = centered_rect(60, 40, area);
+
+    // Clear the background (overlay effect)
+    f.render_widget(Clear, area);
+
+    // Create the modal layout
+    let modal_layout = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3), // Title section
+            Constraint::Min(4),    // Theme selection
+            Constraint::Length(2), // Help text
+        ])
+        .split(modal_area);
+
+    // Modal border and title
+    let modal_block = Block::default()
+        .title(" Settings ")
+        .borders(Borders::ALL)
+        .border_style(theme.border_style());
+
+    f.render_widget(modal_block, modal_area);
+
+    // Theme selection section
+    let theme_section = Paragraph::new("Theme Selection")
+        .style(theme.text_style())
+        .alignment(Alignment::Left);
+    f.render_widget(theme_section, modal_layout[0]);
+
+    // Theme options with radio buttons
+    let themes = [
+        ("Everforest Dark", ThemeVariant::EverforestDark),
+        ("Everforest Light", ThemeVariant::EverforestLight),
+    ];
+
+    let items: Vec<ListItem> = themes
+        .iter()
+        .enumerate()
+        .map(|(i, (name, _variant))| {
+            let indicator = if i == modal_state.selected_theme_index {
+                "●" // Filled circle for selected
+            } else {
+                "○" // Empty circle for unselected
+            };
+            let style = if i == modal_state.selected_theme_index {
+                theme.highlight_style()
+            } else {
+                theme.text_style()
+            };
+            ListItem::new(format!("  {} {}", indicator, name)).style(style)
+        })
+        .collect();
+
+    let theme_list = List::new(items).style(theme.text_style());
+
+    f.render_widget(theme_list, modal_layout[1]);
+
+    // Help text at bottom
+    let help_text = Paragraph::new("ESC: Close    ↑↓: Navigate")
+        .style(theme.secondary_style())
+        .alignment(Alignment::Center);
+    f.render_widget(help_text, modal_layout[2]);
+}
+
+/// Calculate centered rectangle for modal positioning
+fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
+    let popup_layout = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Percentage((100 - percent_y) / 2),
+            Constraint::Percentage(percent_y),
+            Constraint::Percentage((100 - percent_y) / 2),
+        ])
+        .split(r);
+
+    Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage((100 - percent_x) / 2),
+            Constraint::Percentage(percent_x),
+            Constraint::Percentage((100 - percent_x) / 2),
+        ])
+        .split(popup_layout[1])[1]
 }
 
 impl Default for SettingsManager {

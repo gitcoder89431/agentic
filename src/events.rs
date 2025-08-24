@@ -16,6 +16,12 @@ pub enum AppEvent {
     OpenSettings,
     /// User requested to close settings modal
     CloseSettings,
+    /// Navigate up in settings modal
+    NavigateUp,
+    /// Navigate down in settings modal
+    NavigateDown,
+    /// Select current item in settings modal
+    Select,
     /// Settings action to be applied
     SettingsAction(crate::settings::SettingsAction),
     /// Terminal was resized to new dimensions
@@ -49,8 +55,11 @@ impl EventHandler {
                     match key_event.code {
                         KeyCode::Char('q') => Ok(AppEvent::Quit),
                         KeyCode::Esc => Ok(AppEvent::CloseSettings),
-                        KeyCode::Char(',') => Ok(AppEvent::OpenSettings),
+                        KeyCode::Char('s') | KeyCode::Char('S') => Ok(AppEvent::OpenSettings),
                         KeyCode::Char('t') | KeyCode::Char('T') => Ok(AppEvent::ToggleTheme),
+                        KeyCode::Up => Ok(AppEvent::NavigateUp),
+                        KeyCode::Down => Ok(AppEvent::NavigateDown),
+                        KeyCode::Enter => Ok(AppEvent::Select),
                         KeyCode::Char('c')
                             if key_event.modifiers.contains(KeyModifiers::CONTROL) =>
                         {
@@ -70,7 +79,7 @@ impl EventHandler {
 
 impl Default for EventHandler {
     fn default() -> Self {
-        Self::new(Duration::from_millis(50))
+        Self::new(Duration::from_millis(100)) // 100ms timeout for better efficiency
     }
 }
 

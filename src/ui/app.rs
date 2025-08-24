@@ -3,7 +3,7 @@
 use crate::{
     events::{AppEvent, AppState, EventHandler},
     layout::AppLayout,
-    settings::{Settings, SettingsAction, SettingsManager},
+    settings::{Settings, SettingsAction, SettingsManager, SettingsModalState},
     theme::{Element, Theme},
 };
 use crossterm::{
@@ -17,8 +17,7 @@ use ratatui::{
     layout::Alignment,
     widgets::{Block, Borders, Paragraph, Wrap},
 };
-use std::{io, time::Duration};
-use tokio::time;
+use std::io;
 
 /// Main application state and manager
 pub struct App {
@@ -34,6 +33,8 @@ pub struct App {
     event_handler: EventHandler,
     /// Settings manager for configuration
     settings: SettingsManager,
+    /// Settings modal state for navigation
+    modal_state: Option<SettingsModalState>,
     /// Last known terminal size for resize detection
     last_size: Option<(u16, u16)>,
 }
@@ -48,6 +49,7 @@ impl App {
             layout: AppLayout::new().expect("Failed to create layout"),
             event_handler: EventHandler::default(),
             settings: SettingsManager::new(),
+            modal_state: None,
             last_size: None,
         }
     }
@@ -69,11 +71,15 @@ impl App {
             self.previous_state = self.state.clone();
         }
         self.state = AppState::Settings;
+
+        // Initialize modal state with current theme
+        self.modal_state = Some(SettingsModalState::new(self.settings.get().theme_variant));
     }
 
     /// Exit settings modal and return to previous state
     pub fn exit_settings(&mut self) {
         self.state = self.previous_state.clone();
+        self.modal_state = None;
     }
 
     /// Main application run loop with proper async event handling
@@ -81,35 +87,36 @@ impl App {
         &mut self,
         terminal: &mut Terminal<B>,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let mut interval = time::interval(Duration::from_millis(16)); // ~60 FPS
+        // Initial render
+        terminal.draw(|f| self.draw(f))?;
 
         loop {
-            // Handle the render/update cycle
-            tokio::select! {
-                _ = interval.tick() => {
-                    // Render the UI
-                    terminal.draw(|f| self.draw(f))?;
+            // Handle input events - this will block until an event occurs
+            let event_result = {
+                let event_handler = self.event_handler.clone();
+                tokio::task::spawn_blocking(move || event_handler.next_event())
+            }.await;
 
-                    // Check if we should quit
-                    if self.should_quit() {
-                        break;
-                    }
-                }
-
-                // Handle input events
-                event_result = {
-                    let event_handler = self.event_handler.clone();
-                    tokio::task::spawn_blocking(move || event_handler.next_event())
-                } => {
-                    match event_result? {
-                        Ok(event) => {
-                            self.handle_event(event);
-                        }
-                        Err(e) => {
-                            self.state = AppState::Error(format!("Input error: {}", e));
+            match event_result? {
+                Ok(event) => {
+                    // Only handle events that aren't None
+                    if event != AppEvent::None {
+                        self.handle_event(event);
+                        
+                        // Only redraw after handling a real event
+                        terminal.draw(|f| self.draw(f))?;
+                        
+                        // Check if we should quit after handling the event
+                        if self.should_quit() {
                             break;
                         }
                     }
+                }
+                Err(e) => {
+                    self.state = AppState::Error(format!("Input error: {}", e));
+                    // Redraw to show error state
+                    terminal.draw(|f| self.draw(f))?;
+                    break;
                 }
             }
         }
@@ -133,6 +140,42 @@ impl App {
                 } else {
                     // If not in settings, ESC means quit
                     self.state = AppState::Quitting;
+                }
+            }
+            AppEvent::NavigateUp => {
+                // Only handle navigation in settings modal
+                if matches!(self.state, AppState::Settings) {
+                    if let Some(ref mut modal_state) = self.modal_state {
+                        modal_state.navigate_up();
+                        // Apply live theme preview
+                        let selected_theme = modal_state.selected_theme();
+                        self.theme.set_variant(selected_theme);
+                    }
+                }
+            }
+            AppEvent::NavigateDown => {
+                // Only handle navigation in settings modal
+                if matches!(self.state, AppState::Settings) {
+                    if let Some(ref mut modal_state) = self.modal_state {
+                        modal_state.navigate_down();
+                        // Apply live theme preview
+                        let selected_theme = modal_state.selected_theme();
+                        self.theme.set_variant(selected_theme);
+                    }
+                }
+            }
+            AppEvent::Select => {
+                // Only handle selection in settings modal
+                if matches!(self.state, AppState::Settings) {
+                    if let Some(ref modal_state) = self.modal_state {
+                        let selected_theme = modal_state.selected_theme();
+                        let action = SettingsAction::ChangeTheme(selected_theme);
+                        if let Err(e) = self.handle_settings_action(action) {
+                            self.state = AppState::Error(format!("Settings error: {}", e));
+                        }
+                        // Close modal after selection
+                        self.exit_settings();
+                    }
                 }
             }
             AppEvent::SettingsAction(action) => {
@@ -180,6 +223,13 @@ impl App {
         self.render_header(frame, layout_rects.header);
         self.render_main_content(frame, layout_rects.body);
         self.render_footer(frame, layout_rects.footer);
+
+        // Render modal overlay if in settings state
+        if matches!(self.state, AppState::Settings) {
+            if let Some(ref modal_state) = self.modal_state {
+                crate::settings::render_settings_modal(frame, size, modal_state, &self.theme);
+            }
+        }
     }
 
     /// Render the header section
@@ -320,7 +370,7 @@ impl App {
 
         let footer_text = match self.state {
             AppState::Main => format!(
-                "ESC/q: Quit | T: Toggle Theme | ,: Settings | Current: [{}] | Production v0.1.0",
+                "ESC/q: Quit | T: Toggle Theme | S: Settings | Current: [{}] | Production v0.1.0",
                 current_theme
             ),
             AppState::Settings => format!(
