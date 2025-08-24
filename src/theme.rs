@@ -32,6 +32,7 @@ pub struct ColorPalette {
     pub border: Color,
     pub selection: Color,
     pub cursor: Color,
+    pub warning: Color,  // Yellow/orange for settings
 }
 
 /// UI element types for styling
@@ -57,6 +58,8 @@ pub enum Element {
     Active,
     /// Inactive/disabled elements
     Inactive,
+    /// Warning/settings elements (yellow/orange)
+    Warning,
 }
 
 /// Main theme structure managing all UI styling
@@ -85,6 +88,7 @@ impl Theme {
                 border: Color::Rgb(116, 125, 135),     // #747d87 (gray)
                 selection: Color::Rgb(64, 72, 78),     // #40484e (darker bg)
                 cursor: Color::Rgb(211, 198, 170),     // #d3c6aa (same as fg)
+                warning: Color::Rgb(219, 188, 127),    // #dbbc7f (yellow/orange)
             },
             ThemeVariant::EverforestLight => ColorPalette {
                 background: Color::Rgb(253, 246, 227), // #fdf6e3
@@ -95,6 +99,7 @@ impl Theme {
                 border: Color::Rgb(150, 160, 170),     // #96a0aa (gray)
                 selection: Color::Rgb(243, 236, 217),  // #f3ecd9 (darker bg)
                 cursor: Color::Rgb(92, 106, 114),      // #5c6a72 (same as fg)
+                warning: Color::Rgb(207, 131, 44),     // #cf832c (yellow/orange)
             },
         };
 
@@ -174,6 +179,10 @@ impl Theme {
             Element::Inactive => Style::default()
                 .fg(self.colors.border)
                 .bg(self.colors.background),
+
+            Element::Warning => Style::default()
+                .fg(self.colors.warning)
+                .bg(self.colors.background),
         }
     }
 
@@ -186,6 +195,7 @@ impl Theme {
             Element::Highlight => self.colors.foreground,
             Element::Secondary => self.colors.secondary,
             Element::Info => self.colors.info,
+            Element::Warning => self.colors.warning,
         }
     }
 
@@ -230,5 +240,10 @@ impl Theme {
     /// Get style for info elements
     pub fn info_style(&self) -> Style {
         self.ratatui_style(Element::Info)
+    }
+
+    /// Get style for warning/settings elements
+    pub fn warning_style(&self) -> Style {
+        self.ratatui_style(Element::Warning)
     }
 }

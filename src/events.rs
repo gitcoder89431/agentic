@@ -14,16 +14,28 @@ pub enum AppEvent {
     OpenSettings,
     /// User requested to close settings modal
     CloseSettings,
+    /// User requested to show about information
+    ShowAbout,
+    /// User requested to show menu modal
+    ShowMenu,
     /// Navigate up in settings modal
     NavigateUp,
     /// Navigate down in settings modal
     NavigateDown,
+    /// Navigate left (for theme switching)
+    NavigateLeft,
+    /// Navigate right (for theme switching)
+    NavigateRight,
     /// Select current item in settings modal
     Select,
     /// Start the AI orchestration application (Enter key)
     StartApplication,
     /// Toggle theme between Dark/Light
     ToggleTheme,
+    /// Text input character
+    Input(char),
+    /// Backspace key pressed
+    Backspace,
     /// Settings action to be applied
     SettingsAction(crate::settings::SettingsAction),
     /// Terminal was resized to new dimensions
@@ -58,22 +70,27 @@ impl EventHandler {
                         KeyCode::Char('q') => Ok(AppEvent::Quit),
                         KeyCode::Esc => Ok(AppEvent::CloseSettings),
                         KeyCode::Char(',') | KeyCode::Char('s') | KeyCode::Char('S') => {
-                            Ok(AppEvent::OpenSettings)
+                            Ok(AppEvent::ShowMenu)
                         }
+                        KeyCode::Char('a') | KeyCode::Char('A') => Ok(AppEvent::ShowAbout),
                         KeyCode::Char('t') | KeyCode::Char('T') => Ok(AppEvent::ToggleTheme),
                         KeyCode::Up | KeyCode::Char('k') => Ok(AppEvent::NavigateUp),
                         KeyCode::Down | KeyCode::Char('j') => Ok(AppEvent::NavigateDown),
+                        KeyCode::Left | KeyCode::Char('h') => Ok(AppEvent::NavigateLeft),
+                        KeyCode::Right | KeyCode::Char('l') => Ok(AppEvent::NavigateRight),
                         KeyCode::Enter => {
                             // Enter can be either StartApplication or Select depending on context
                             // We'll let the App decide which one to use based on state
                             Ok(AppEvent::StartApplication)
                         }
                         KeyCode::Char(' ') => Ok(AppEvent::Select),
+                        KeyCode::Backspace => Ok(AppEvent::Backspace),
                         KeyCode::Char('c')
                             if key_event.modifiers.contains(KeyModifiers::CONTROL) =>
                         {
                             Ok(AppEvent::ForceQuit)
                         }
+                        KeyCode::Char(c) => Ok(AppEvent::Input(c)),
                         _ => Ok(AppEvent::None),
                     }
                 }
@@ -97,6 +114,10 @@ impl Default for EventHandler {
 pub enum AppState {
     /// Primary TUI interface
     Main,
+    /// Menu modal active
+    Menu,
+    /// Model selection modal active for OpenRouter
+    ModelSelection,
     /// Settings modal active
     Settings,
     /// Waiting for provider configuration - no valid providers available
