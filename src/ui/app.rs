@@ -48,7 +48,7 @@ impl App {
         } else {
             AppState::WaitingForConfig
         };
-        
+
         Self {
             state: initial_state,
             previous_state: AppState::Main,
@@ -361,7 +361,7 @@ impl App {
             AppState::WaitingForConfig => {
                 let provider_status = self.settings().get_provider_status_summary();
                 let available_providers = self.settings().get_available_providers();
-                
+
                 let status_display = if provider_status.is_empty() {
                     "    No providers configured yet".to_string()
                 } else {
@@ -378,7 +378,7 @@ impl App {
                         .collect::<Vec<_>>()
                         .join("\n")
                 };
-                
+
                 format!(r#"
 
     ╔═══════════════════════════════════════════════════════════════╗
@@ -530,7 +530,7 @@ impl App {
         self.settings.reset_to_defaults();
         self.settings.get().apply_theme(&mut self.theme);
     }
-    
+
     /// Check provider readiness and update app state accordingly
     pub fn check_provider_readiness(&mut self) {
         if !self.settings.get().has_valid_provider() {
@@ -543,12 +543,14 @@ impl App {
             }
         }
     }
-    
+
     /// Handle validation event results and update provider status
     pub fn update_provider_status(&mut self, validation_event: crate::settings::ValidationEvent) {
         // Update the provider status through settings
-        self.settings.get_mut().handle_validation_event(validation_event);
-        
+        self.settings
+            .get_mut()
+            .handle_validation_event(validation_event);
+
         // Check if we need to change app state
         self.check_provider_readiness();
     }
