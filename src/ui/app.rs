@@ -3,6 +3,7 @@
 use crate::{
     events::{AppEvent, AppState, EventHandler},
     layout::AppLayout,
+    settings::{Settings, SettingsAction, SettingsManager},
     theme::{Element, Theme},
 };
 use crossterm::{
@@ -29,6 +30,8 @@ pub struct App {
     layout: AppLayout,
     /// Event handler for input processing
     event_handler: EventHandler,
+    /// Settings manager for configuration
+    settings: SettingsManager,
     /// Last known terminal size for resize detection
     last_size: Option<(u16, u16)>,
 }
@@ -41,6 +44,7 @@ impl App {
             theme,
             layout: AppLayout::new().expect("Failed to create layout"),
             event_handler: EventHandler::default(),
+            settings: SettingsManager::new(),
             last_size: None,
         }
     }
@@ -103,7 +107,9 @@ impl App {
                 self.state = AppState::Quitting;
             }
             AppEvent::ToggleTheme => {
-                self.theme.toggle();
+                // Toggle theme through settings system
+                self.settings.get_mut().toggle_theme();
+                self.settings.get().apply_theme(&mut self.theme);
             }
             AppEvent::Resize(width, height) => {
                 self.last_size = Some((width, height));
@@ -273,5 +279,27 @@ impl App {
         )?;
         terminal.show_cursor()?;
         Ok(())
+    }
+
+    /// Get immutable reference to settings
+    pub fn settings(&self) -> &Settings {
+        self.settings.get()
+    }
+
+    /// Handle settings action
+    pub fn handle_settings_action(
+        &mut self,
+        action: SettingsAction,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        self.settings.apply_action(action)?;
+        // Apply any theme changes
+        self.settings.get().apply_theme(&mut self.theme);
+        Ok(())
+    }
+
+    /// Reset settings to defaults
+    pub fn reset_settings(&mut self) {
+        self.settings.reset_to_defaults();
+        self.settings.get().apply_theme(&mut self.theme);
     }
 }

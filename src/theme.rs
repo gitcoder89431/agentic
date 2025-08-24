@@ -119,6 +119,14 @@ impl Theme {
         *self = Self::new(self.variant);
     }
 
+    /// Set specific theme variant
+    pub fn set_variant(&mut self, variant: ThemeVariant) {
+        if self.variant != variant {
+            self.variant = variant;
+            *self = Self::new(self.variant);
+        }
+    }
+
     /// Get a ratatui Style for the specified UI element
     pub fn ratatui_style(&self, element: Element) -> Style {
         match element {
