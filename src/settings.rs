@@ -644,16 +644,16 @@ fn render_provider_section(f: &mut Frame, area: Rect, section: &ProviderSection,
 
     // Render fields
     for (i, field) in section.fields.iter().enumerate() {
-        if let Some(field_area) = provider_layout[1].height.checked_sub(i as u16) {
-            if field_area > 0 {
-                let field_rect = Rect {
-                    x: provider_layout[1].x,
-                    y: provider_layout[1].y + i as u16,
-                    width: provider_layout[1].width,
-                    height: 1,
-                };
-                render_config_field(f, field_rect, field, theme);
-            }
+        if let Some(field_area) = provider_layout[1].height.checked_sub(i as u16)
+            && field_area > 0
+        {
+            let field_rect = Rect {
+                x: provider_layout[1].x,
+                y: provider_layout[1].y + i as u16,
+                width: provider_layout[1].width,
+                height: 1,
+            };
+            render_config_field(f, field_rect, field, theme);
         }
     }
 }
