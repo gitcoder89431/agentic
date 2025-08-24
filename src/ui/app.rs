@@ -95,17 +95,18 @@ impl App {
             let event_result = {
                 let event_handler = self.event_handler.clone();
                 tokio::task::spawn_blocking(move || event_handler.next_event())
-            }.await;
+            }
+            .await;
 
             match event_result? {
                 Ok(event) => {
                     // Only handle events that aren't None
                     if event != AppEvent::None {
                         self.handle_event(event);
-                        
+
                         // Only redraw after handling a real event
                         terminal.draw(|f| self.draw(f))?;
-                        
+
                         // Check if we should quit after handling the event
                         if self.should_quit() {
                             break;
