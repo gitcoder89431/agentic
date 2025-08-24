@@ -7,7 +7,7 @@ use crate::theme::{Theme, ThemeVariant};
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
-    widgets::{Block, Borders, Clear, List, ListItem, Paragraph},
+    widgets::{Block, Borders, Clear, Paragraph},
 };
 
 /// Provider configuration types for backend communication
@@ -40,6 +40,25 @@ pub enum ValidationStatus {
 pub enum ProviderField {
     LocalEndpoint,
     OpenRouterApiKey,
+}
+
+/// Provider section for UI rendering
+#[derive(Debug, Clone)]
+pub struct ProviderSection {
+    pub title: String,
+    pub status_icon: String,
+    pub fields: Vec<ConfigField>,
+    pub is_focused: bool,
+}
+
+/// Configuration field for UI rendering
+#[derive(Debug, Clone)]
+pub struct ConfigField {
+    pub label: String,
+    pub value: String,
+    pub is_masked: bool,
+    pub is_focused: bool,
+    pub is_editing: bool,
 }
 
 impl ProviderConfig {
@@ -294,6 +313,61 @@ impl Settings {
         }
     }
 
+    /// Create provider sections for UI rendering
+    pub fn get_provider_sections(&self) -> Vec<ProviderSection> {
+        vec![
+            self.create_local_provider_section(),
+            self.create_openrouter_provider_section(),
+        ]
+    }
+
+    /// Create local provider section for UI
+    fn create_local_provider_section(&self) -> ProviderSection {
+        let endpoint_value = self.local_provider.endpoint_url
+            .as_ref()
+            .unwrap_or(&"Not configured".to_string())
+            .clone();
+
+        let endpoint_field = ConfigField {
+            label: "Endpoint".to_string(),
+            value: endpoint_value,
+            is_masked: false,
+            is_focused: matches!(self.focused_field, Some(ProviderField::LocalEndpoint)),
+            is_editing: false, // TODO: implement editing mode
+        };
+
+        ProviderSection {
+            title: "LOCAL Provider".to_string(),
+            status_icon: Self::get_validation_status_icon(&self.local_provider.validation_status).to_string(),
+            fields: vec![endpoint_field],
+            is_focused: self.selected_provider_index == 0,
+        }
+    }
+
+    /// Create OpenRouter provider section for UI
+    fn create_openrouter_provider_section(&self) -> ProviderSection {
+        let api_key_value = if let Some(ref key) = self.openrouter_provider.api_key {
+            self.openrouter_provider.get_masked_api_key().unwrap_or_else(|| key.clone())
+        } else {
+            "Not configured".to_string()
+        };
+
+        let api_key_field = ConfigField {
+            label: "API Key".to_string(),
+            value: api_key_value,
+            is_masked: self.openrouter_provider.api_key.is_some(),
+            is_focused: matches!(self.focused_field, Some(ProviderField::OpenRouterApiKey)),
+            is_editing: false, // TODO: implement editing mode
+        };
+
+        ProviderSection {
+            title: "OPENROUTER Provider".to_string(),
+            status_icon: Self::get_validation_status_icon(&self.openrouter_provider.validation_status).to_string(),
+            fields: vec![api_key_field],
+            is_focused: self.selected_provider_index == 1,
+        }
+    }
+
     /// Validate current settings configuration
     pub fn validate(&self) -> Result<(), SettingsError> {
         // Validate that at least one provider is configured
@@ -465,10 +539,11 @@ pub fn render_settings_modal(
     f: &mut Frame,
     area: Rect,
     modal_state: &SettingsModalState,
+    settings: &Settings,
     theme: &Theme,
 ) {
-    // Create a centered modal area
-    let modal_area = centered_rect(60, 40, area);
+    // Create a larger centered modal area for provider configuration
+    let modal_area = centered_rect(80, 70, area);
 
     // Clear the background (overlay effect)
     f.render_widget(Clear, area);
@@ -477,9 +552,11 @@ pub fn render_settings_modal(
     let modal_layout = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3), // Title section
-            Constraint::Min(4),    // Theme selection
-            Constraint::Length(2), // Help text
+            Constraint::Length(1), // Title
+            Constraint::Min(4),    // Provider configurations
+            Constraint::Length(3), // Theme selection section
+            Constraint::Length(1), // Save button
+            Constraint::Length(1), // Help text
         ])
         .split(modal_area);
 
@@ -491,45 +568,148 @@ pub fn render_settings_modal(
 
     f.render_widget(modal_block, modal_area);
 
-    // Theme selection section
-    let theme_section = Paragraph::new("Theme Selection")
-        .style(theme.text_style())
-        .alignment(Alignment::Left);
-    f.render_widget(theme_section, modal_layout[0]);
+    // Render provider sections
+    render_provider_sections(f, modal_layout[1], settings, theme);
 
-    // Theme options with radio buttons
-    let themes = [
-        ("Everforest Dark", ThemeVariant::EverforestDark),
-        ("Everforest Light", ThemeVariant::EverforestLight),
-    ];
+    // Theme selection at the bottom (as requested)
+    render_theme_selection(f, modal_layout[2], modal_state, theme);
 
-    let items: Vec<ListItem> = themes
-        .iter()
-        .enumerate()
-        .map(|(i, (name, _variant))| {
-            let indicator = if i == modal_state.selected_theme_index {
-                "●" // Filled circle for selected
-            } else {
-                "○" // Empty circle for unselected
-            };
-            let style = if i == modal_state.selected_theme_index {
-                theme.highlight_style()
-            } else {
-                theme.text_style()
-            };
-            ListItem::new(format!("  {} {}", indicator, name)).style(style)
-        })
-        .collect();
-
-    let theme_list = List::new(items).style(theme.text_style());
-
-    f.render_widget(theme_list, modal_layout[1]);
+    // Save configuration button
+    let save_button = Paragraph::new("  [Save Configuration]  ")
+        .style(theme.highlight_style())
+        .alignment(Alignment::Center);
+    f.render_widget(save_button, modal_layout[3]);
 
     // Help text at bottom
-    let help_text = Paragraph::new("ESC: Close    ↑↓: Navigate")
+    let help_text = Paragraph::new("ESC: Close  ↑↓: Navigate  Enter: Edit  S: Save")
         .style(theme.secondary_style())
         .alignment(Alignment::Center);
-    f.render_widget(help_text, modal_layout[2]);
+    f.render_widget(help_text, modal_layout[4]);
+}
+
+/// Render provider configuration sections
+fn render_provider_sections(f: &mut Frame, area: Rect, settings: &Settings, theme: &Theme) {
+    let provider_sections = settings.get_provider_sections();
+    
+    // Split area for each provider section
+    let section_constraints: Vec<Constraint> = provider_sections
+        .iter()
+        .map(|_| Constraint::Length(4)) // Each provider section takes 4 lines
+        .collect();
+    
+    let section_layout = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints(section_constraints)
+        .split(area);
+
+    // Render each provider section
+    for (i, section) in provider_sections.iter().enumerate() {
+        if i < section_layout.len() {
+            render_provider_section(f, section_layout[i], section, theme);
+        }
+    }
+}
+
+/// Render a single provider section
+fn render_provider_section(f: &mut Frame, area: Rect, section: &ProviderSection, theme: &Theme) {
+    // Layout for provider section: title+status, field lines
+    let provider_layout = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(1), // Provider title with status
+            Constraint::Min(2),    // Fields
+        ])
+        .split(area);
+
+    // Provider title with status icon
+    let title_style = if section.is_focused {
+        theme.highlight_style()
+    } else {
+        theme.text_style()
+    };
+    
+    let title_line = format!("  {}    {}", section.title, section.status_icon);
+    let title_paragraph = Paragraph::new(title_line)
+        .style(title_style)
+        .alignment(Alignment::Left);
+    f.render_widget(title_paragraph, provider_layout[0]);
+
+    // Render fields
+    for (i, field) in section.fields.iter().enumerate() {
+        if let Some(field_area) = provider_layout[1].height.checked_sub(i as u16) {
+            if field_area > 0 {
+                let field_rect = Rect {
+                    x: provider_layout[1].x,
+                    y: provider_layout[1].y + i as u16,
+                    width: provider_layout[1].width,
+                    height: 1,
+                };
+                render_config_field(f, field_rect, field, theme);
+            }
+        }
+    }
+}
+
+/// Render a configuration field
+fn render_config_field(f: &mut Frame, area: Rect, field: &ConfigField, theme: &Theme) {
+    let field_style = if field.is_focused {
+        theme.highlight_style()
+    } else {
+        theme.text_style()
+    };
+
+    // Format field with underline if focused/editing
+    let field_text = if field.is_focused || field.is_editing {
+        format!("  {}: {}", field.label, add_underline(&field.value))
+    } else {
+        format!("  {}: {}", field.label, field.value)
+    };
+
+    let field_paragraph = Paragraph::new(field_text)
+        .style(field_style)
+        .alignment(Alignment::Left);
+    f.render_widget(field_paragraph, area);
+}
+
+/// Add underline characters to text for focused fields
+fn add_underline(text: &str) -> String {
+    let underline = "▔".repeat(text.len().max(20)); // Minimum 20 chars underline
+    format!("{}\n            {}", text, underline)
+}
+
+/// Render theme selection section (moved to bottom as requested)
+fn render_theme_selection(f: &mut Frame, area: Rect, modal_state: &SettingsModalState, theme: &Theme) {
+    // Layout for theme section
+    let theme_layout = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(1), // "Theme" label
+            Constraint::Length(1), // Theme options horizontal
+        ])
+        .split(area);
+
+    // Theme section label
+    let theme_label = Paragraph::new("  Theme")
+        .style(theme.text_style())
+        .alignment(Alignment::Left);
+    f.render_widget(theme_label, theme_layout[0]);
+
+    // Theme options in horizontal layout as requested: [Dark] left or right [Light]
+    let current_theme_name = match modal_state.available_themes[modal_state.selected_theme_index] {
+        ThemeVariant::EverforestDark => "Dark",
+        ThemeVariant::EverforestLight => "Light",
+    };
+
+    let theme_line = format!(
+        "  [{}] ← → [{}]",
+        if current_theme_name == "Dark" { "●Dark" } else { "Dark" },
+        if current_theme_name == "Light" { "●Light" } else { "Light" }
+    );
+
+    let theme_selection = Paragraph::new(theme_line)
+        .style(theme.text_style())
+        .alignment(Alignment::Left);
+    f.render_widget(theme_selection, theme_layout[1]);
 }
 
 /// Calculate centered rectangle for modal positioning
