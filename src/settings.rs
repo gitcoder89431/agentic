@@ -108,7 +108,6 @@ impl std::error::Error for SettingsError {}
 
 /// Future-ready settings categories for extensibility
 /// These will be implemented as the application grows
-
 /// Appearance-related settings
 #[derive(Debug, Clone)]
 pub struct AppearanceSettings {
