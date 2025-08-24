@@ -21,6 +21,15 @@ pub enum ProviderType {
     OpenRouter,
 }
 
+impl std::fmt::Display for ProviderType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ProviderType::Local => write!(f, "Local Provider"),
+            ProviderType::OpenRouter => write!(f, "OpenRouter"),
+        }
+    }
+}
+
 /// Provider configuration with validation status
 #[derive(Debug, Clone)]
 pub struct ProviderConfig {
@@ -1119,6 +1128,49 @@ impl Settings {
                 }
             },
         }
+    }
+    
+    /// Check if at least one provider is valid and ready for queries
+    pub fn has_valid_provider(&self) -> bool {
+        self.local_provider.validation_status == ValidationStatus::Valid
+            || self.openrouter_provider.validation_status == ValidationStatus::Valid
+    }
+    
+    /// Get list of available (valid) providers
+    pub fn get_available_providers(&self) -> Vec<ProviderType> {
+        let mut providers = Vec::new();
+        
+        if self.local_provider.validation_status == ValidationStatus::Valid {
+            providers.push(ProviderType::Local);
+        }
+        
+        if self.openrouter_provider.validation_status == ValidationStatus::Valid {
+            providers.push(ProviderType::OpenRouter);
+        }
+        
+        providers
+    }
+    
+    /// Get provider configuration status for UI display
+    pub fn get_provider_status_summary(&self) -> Vec<(ProviderType, ValidationStatus, String)> {
+        vec![
+            (
+                ProviderType::Local,
+                self.local_provider.validation_status.clone(),
+                match &self.local_provider.endpoint_url {
+                    Some(url) => url.clone(),
+                    None => "Not configured".to_string(),
+                }
+            ),
+            (
+                ProviderType::OpenRouter,
+                self.openrouter_provider.validation_status.clone(),
+                match &self.openrouter_provider.api_key {
+                    Some(_) => "API configured".to_string(),
+                    None => "Not configured".to_string(),
+                }
+            ),
+        ]
     }
 }
 

@@ -42,13 +42,20 @@ pub struct App {
 impl App {
     /// Create a new application instance with the given theme
     pub fn new(theme: Theme) -> Self {
+        let settings_manager = SettingsManager::new();
+        let initial_state = if settings_manager.get().has_valid_provider() {
+            AppState::Main
+        } else {
+            AppState::WaitingForConfig
+        };
+        
         Self {
-            state: AppState::Main,
+            state: initial_state,
             previous_state: AppState::Main,
             theme,
             layout: AppLayout::new().expect("Failed to create layout"),
             event_handler: EventHandler::default(),
-            settings: SettingsManager::new(),
+            settings: settings_manager,
             modal_state: None,
             last_size: None,
         }
@@ -132,19 +139,22 @@ impl App {
                 self.state = AppState::Quitting;
             }
             AppEvent::OpenSettings => {
+                // Settings can be opened from any state
                 self.enter_settings();
             }
             AppEvent::CloseSettings => {
                 // Only close settings if we're in settings mode
                 if matches!(self.state, AppState::Settings) {
                     self.exit_settings();
+                    // After closing settings, check provider readiness
+                    self.check_provider_readiness();
                 } else {
                     // If not in settings, ESC means quit
                     self.state = AppState::Quitting;
                 }
             }
             AppEvent::NavigateUp => {
-                // Only handle navigation in settings modal
+                // Only handle navigation in settings modal and main state
                 if matches!(self.state, AppState::Settings)
                     && let Some(ref mut modal_state) = self.modal_state
                 {
@@ -153,9 +163,10 @@ impl App {
                     let selected_theme = modal_state.selected_theme();
                     self.theme.set_variant(selected_theme);
                 }
+                // In WaitingForConfig state, navigation is ignored
             }
             AppEvent::NavigateDown => {
-                // Only handle navigation in settings modal
+                // Only handle navigation in settings modal and main state
                 if matches!(self.state, AppState::Settings)
                     && let Some(ref mut modal_state) = self.modal_state
                 {
@@ -164,6 +175,7 @@ impl App {
                     let selected_theme = modal_state.selected_theme();
                     self.theme.set_variant(selected_theme);
                 }
+                // In WaitingForConfig state, navigation is ignored
             }
             AppEvent::Select => {
                 // Only handle selection in settings modal
@@ -177,12 +189,18 @@ impl App {
                     }
                     // Close modal after selection
                     self.exit_settings();
+                    // Check provider readiness after theme change
+                    self.check_provider_readiness();
                 }
+                // In WaitingForConfig state, selection is ignored
             }
             AppEvent::SettingsAction(action) => {
                 // Handle settings actions and apply theme changes immediately
                 if let Err(e) = self.handle_settings_action(action) {
                     self.state = AppState::Error(format!("Settings error: {}", e));
+                } else {
+                    // After any settings action, check provider readiness
+                    self.check_provider_readiness();
                 }
             }
             AppEvent::Resize(width, height) => {
@@ -340,6 +358,76 @@ impl App {
             AppState::Error(error) => {
                 format!("Application Error\n\nAn error occurred:\n{}\n\nPress ESC or q to quit.", error)
             }
+            AppState::WaitingForConfig => {
+                let provider_status = self.settings().get_provider_status_summary();
+                let available_providers = self.settings().get_available_providers();
+                
+                let status_display = if provider_status.is_empty() {
+                    "    No providers configured yet".to_string()
+                } else {
+                    provider_status.iter()
+                        .map(|(provider, status, _)| {
+                            let status_icon = match status {
+                                crate::settings::ValidationStatus::Valid => "✅",
+                                crate::settings::ValidationStatus::Invalid => "❌",
+                                crate::settings::ValidationStatus::Checking => "⏳",
+                                crate::settings::ValidationStatus::Unchecked => "⚪",
+                            };
+                            format!("    {} {}", status_icon, provider)
+                        })
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                };
+                
+                format!(r#"
+
+    ╔═══════════════════════════════════════════════════════════════╗
+    ║                                                               ║
+    ║              ⚙️  PROVIDER CONFIGURATION REQUIRED ⚙️           ║
+    ║                                                               ║
+    ╚═══════════════════════════════════════════════════════════════╝
+
+    Welcome to Agentic! Before you can start using the AI orchestration
+    features, you need to configure at least one AI provider.
+
+    PROVIDER STATUS
+    ══════════════════════════════════════════════════════════════════
+
+    {}
+
+    AVAILABLE PROVIDERS
+    ══════════════════════════════════════════════════════════════════
+
+    {}
+
+    CONFIGURATION STEPS
+    ══════════════════════════════════════════════════════════════════
+
+    1. Press ',' to open the Settings panel
+    2. Navigate to Provider Configuration
+    3. Add your API keys for one or more providers
+    4. Test the configuration
+    5. Return here to start using Agentic
+
+    KEY BINDINGS
+    ══════════════════════════════════════════════════════════════════
+
+    , (comma) - Open Settings Panel
+    ESC / q   - Quit Application
+    T         - Toggle Theme (Dark/Light)
+
+"#,
+                    status_display,
+                    if available_providers.is_empty() {
+                        "    No providers configured yet".to_string()
+                    } else {
+                        available_providers.iter()
+                            .map(|p| format!("    • {}", p))
+                            .collect::<Vec<_>>()
+                            .join("\n")
+                    }
+                )
+            }
         };
 
         let main_block = Block::default()
@@ -381,6 +469,10 @@ impl App {
             ),
             AppState::Quitting => "Application shutting down gracefully...".to_string(),
             AppState::Error(_) => "Error state - Press ESC/q to quit".to_string(),
+            AppState::WaitingForConfig => format!(
+                ", (comma): Settings | ESC/q: Quit | T: Theme Toggle | Current: [{}] | Configure Provider Required",
+                current_theme
+            ),
         };
 
         let paragraph = Paragraph::new(footer_text)
@@ -437,5 +529,27 @@ impl App {
     pub fn reset_settings(&mut self) {
         self.settings.reset_to_defaults();
         self.settings.get().apply_theme(&mut self.theme);
+    }
+    
+    /// Check provider readiness and update app state accordingly
+    pub fn check_provider_readiness(&mut self) {
+        if !self.settings.get().has_valid_provider() {
+            if self.state == AppState::Main {
+                self.state = AppState::WaitingForConfig;
+            }
+        } else {
+            if self.state == AppState::WaitingForConfig {
+                self.state = AppState::Main;
+            }
+        }
+    }
+    
+    /// Handle validation event results and update provider status
+    pub fn update_provider_status(&mut self, validation_event: crate::settings::ValidationEvent) {
+        // Update the provider status through settings
+        self.settings.get_mut().handle_validation_event(validation_event);
+        
+        // Check if we need to change app state
+        self.check_provider_readiness();
     }
 }
