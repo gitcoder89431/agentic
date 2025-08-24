@@ -145,38 +145,38 @@ impl App {
             }
             AppEvent::NavigateUp => {
                 // Only handle navigation in settings modal
-                if matches!(self.state, AppState::Settings) {
-                    if let Some(ref mut modal_state) = self.modal_state {
-                        modal_state.navigate_up();
-                        // Apply live theme preview
-                        let selected_theme = modal_state.selected_theme();
-                        self.theme.set_variant(selected_theme);
-                    }
+                if matches!(self.state, AppState::Settings)
+                    && let Some(ref mut modal_state) = self.modal_state
+                {
+                    modal_state.navigate_up();
+                    // Apply live theme preview
+                    let selected_theme = modal_state.selected_theme();
+                    self.theme.set_variant(selected_theme);
                 }
             }
             AppEvent::NavigateDown => {
                 // Only handle navigation in settings modal
-                if matches!(self.state, AppState::Settings) {
-                    if let Some(ref mut modal_state) = self.modal_state {
-                        modal_state.navigate_down();
-                        // Apply live theme preview
-                        let selected_theme = modal_state.selected_theme();
-                        self.theme.set_variant(selected_theme);
-                    }
+                if matches!(self.state, AppState::Settings)
+                    && let Some(ref mut modal_state) = self.modal_state
+                {
+                    modal_state.navigate_down();
+                    // Apply live theme preview
+                    let selected_theme = modal_state.selected_theme();
+                    self.theme.set_variant(selected_theme);
                 }
             }
             AppEvent::Select => {
                 // Only handle selection in settings modal
-                if matches!(self.state, AppState::Settings) {
-                    if let Some(ref modal_state) = self.modal_state {
-                        let selected_theme = modal_state.selected_theme();
-                        let action = SettingsAction::ChangeTheme(selected_theme);
-                        if let Err(e) = self.handle_settings_action(action) {
-                            self.state = AppState::Error(format!("Settings error: {}", e));
-                        }
-                        // Close modal after selection
-                        self.exit_settings();
+                if matches!(self.state, AppState::Settings)
+                    && let Some(ref modal_state) = self.modal_state
+                {
+                    let selected_theme = modal_state.selected_theme();
+                    let action = SettingsAction::ChangeTheme(selected_theme);
+                    if let Err(e) = self.handle_settings_action(action) {
+                        self.state = AppState::Error(format!("Settings error: {}", e));
                     }
+                    // Close modal after selection
+                    self.exit_settings();
                 }
             }
             AppEvent::SettingsAction(action) => {
@@ -226,10 +226,10 @@ impl App {
         self.render_footer(frame, layout_rects.footer);
 
         // Render modal overlay if in settings state
-        if matches!(self.state, AppState::Settings) {
-            if let Some(ref modal_state) = self.modal_state {
-                crate::settings::render_settings_modal(frame, size, modal_state, &self.theme);
-            }
+        if matches!(self.state, AppState::Settings)
+            && let Some(ref modal_state) = self.modal_state
+        {
+            crate::settings::render_settings_modal(frame, size, modal_state, &self.theme);
         }
     }
 
