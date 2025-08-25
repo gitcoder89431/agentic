@@ -1,3 +1,4 @@
+use crate::models::ModelValidator;
 use crate::theme::ThemeVariant;
 use figment::{
     providers::{Format, Toml},
@@ -15,9 +16,13 @@ pub enum ValidationError {
     LocalModel,
     CloudModel,
     ApiKey,
+    LocalEndpointUnreachable,
+    LocalModelNotFound,
+    CloudEndpointUnreachable,
+    CloudModelNotFound,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Settings {
     pub theme: ThemeVariant,
     pub endpoint: String,
@@ -30,7 +35,7 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             theme: ThemeVariant::default(),
-            endpoint: "LOCALHOST:2032".to_string(),
+            endpoint: "localhost:11434".to_string(),
             local_model: LOCAL_MODEL_PLACEHOLDER.to_string(),
             api_key: API_KEY_PLACEHOLDER.to_string(),
             cloud_model: CLOUD_MODEL_PLACEHOLDER.to_string(),
@@ -70,6 +75,57 @@ impl Settings {
         if self.api_key == API_KEY_PLACEHOLDER {
             return Err(ValidationError::ApiKey);
         }
+        Ok(())
+    }
+
+    pub async fn validate_endpoints(&self) -> Result<(), ValidationError> {
+        let validator = ModelValidator::new();
+
+        // First do basic validation
+        self.is_valid()?;
+
+        // Then validate actual endpoints
+        validator
+            .validate_local_endpoint(&self.endpoint, &self.local_model)
+            .await
+            .map_err(|_| ValidationError::LocalEndpointUnreachable)?;
+
+        validator
+            .validate_cloud_endpoint(&self.api_key, &self.cloud_model)
+            .await
+            .map_err(|_| ValidationError::CloudEndpointUnreachable)?;
+
+        Ok(())
+    }
+
+    pub async fn validate_local_only(&self) -> Result<(), ValidationError> {
+        if self.local_model == LOCAL_MODEL_PLACEHOLDER {
+            return Err(ValidationError::LocalModel);
+        }
+
+        let validator = ModelValidator::new();
+        validator
+            .validate_local_endpoint(&self.endpoint, &self.local_model)
+            .await
+            .map_err(|_| ValidationError::LocalEndpointUnreachable)?;
+
+        Ok(())
+    }
+
+    pub async fn validate_cloud_only(&self) -> Result<(), ValidationError> {
+        if self.cloud_model == CLOUD_MODEL_PLACEHOLDER {
+            return Err(ValidationError::CloudModel);
+        }
+        if self.api_key == API_KEY_PLACEHOLDER {
+            return Err(ValidationError::ApiKey);
+        }
+
+        let validator = ModelValidator::new();
+        validator
+            .validate_cloud_endpoint(&self.api_key, &self.cloud_model)
+            .await
+            .map_err(|_| ValidationError::CloudEndpointUnreachable)?;
+
         Ok(())
     }
 }

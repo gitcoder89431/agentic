@@ -9,13 +9,23 @@ use std::io::{stdout, Stdout};
 mod ui;
 use ui::app::App;
 
-fn main() -> Result<()> {
-    let settings = Settings::new().unwrap_or_default();
+#[tokio::main]
+async fn main() -> Result<()> {
+    let settings = match Settings::new() {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("Warning: Failed to load settings: {}. Using defaults.", e);
+            Settings::default()
+        }
+    };
     let mut terminal = init_terminal()?;
     let mut app = App::new(settings);
-    app.run(&mut terminal)?;
+
+    let result = app.run(&mut terminal).await;
+
     restore_terminal(&mut terminal)?;
-    Ok(())
+
+    result
 }
 
 fn init_terminal() -> Result<Terminal<CrosstermBackend<Stdout>>> {
