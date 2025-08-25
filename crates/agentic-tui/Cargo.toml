@@ -1,0 +1,17 @@
+[package]
+name = "agentic-tui"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "agentic-tui"
+path = "src/main.rs"
+
+[dependencies]
+agentic-core = { path = "../agentic-core" }
+anyhow = { workspace = true }
+crossterm = { workspace = true }
+ratatui = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
