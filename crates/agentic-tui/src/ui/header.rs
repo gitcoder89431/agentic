@@ -76,6 +76,30 @@ fn build_smart_status_with_color(status: AgentStatus, settings: &Settings) -> (S
             // Highlight the API key issue
             format!("Ruixen :: {} :: [CONFIGURE API KEY]", local_display)
         }
+        AgentStatus::ValidatingLocal => {
+            format!(
+                "Ruixen :: [CHECKING {}] :: {}",
+                local_display, cloud_display
+            )
+        }
+        AgentStatus::ValidatingCloud => {
+            format!(
+                "Ruixen :: {} :: [CHECKING {}]",
+                local_display, cloud_display
+            )
+        }
+        AgentStatus::LocalEndpointError => {
+            format!(
+                "Ruixen :: [ERROR: {} UNREACHABLE] :: {}",
+                local_display, cloud_display
+            )
+        }
+        AgentStatus::CloudEndpointError => {
+            format!(
+                "Ruixen :: {} :: [ERROR: {} UNREACHABLE]",
+                local_display, cloud_display
+            )
+        }
     };
 
     let color = match status {
@@ -88,7 +112,9 @@ fn build_smart_status_with_color(status: AgentStatus, settings: &Settings) -> (S
                 (false, false) => Color::Red,                   // Nothing configured
             }
         }
-        _ => Color::Red, // Validation failed
+        AgentStatus::ValidatingLocal | AgentStatus::ValidatingCloud => Color::Yellow, // Testing in progress
+        AgentStatus::LocalEndpointError | AgentStatus::CloudEndpointError => Color::Red, // Connection failed
+        _ => Color::Red, // Other validation failed
     };
 
     (text, color)
