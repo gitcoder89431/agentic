@@ -102,26 +102,31 @@ impl ModelValidator {
 
     pub async fn fetch_openrouter_models(&self, api_key: &str) -> Result<Vec<OpenRouterModel>> {
         let url = "https://openrouter.ai/api/v1/models";
-        
-        let response = self.client
+
+        let response = self
+            .client
             .get(url)
             .header("Authorization", format!("Bearer {}", api_key))
             .send()
             .await?;
 
         if !response.status().is_success() {
-            return Err(anyhow::anyhow!("OpenRouter API not accessible or invalid API key"));
+            return Err(anyhow::anyhow!(
+                "OpenRouter API not accessible or invalid API key"
+            ));
         }
 
         let openrouter_response: OpenRouterListResponse = response.json().await?;
-        
+
         let mut models: Vec<OpenRouterModel> = openrouter_response
             .data
             .into_iter()
             .map(|raw| OpenRouterModel {
                 id: raw.id,
                 name: raw.name,
-                description: raw.description.unwrap_or_else(|| "No description available".to_string()),
+                description: raw
+                    .description
+                    .unwrap_or_else(|| "No description available".to_string()),
                 pricing: ModelPricing {
                     prompt: raw.pricing.prompt,
                     completion: raw.pricing.completion,
@@ -134,11 +139,11 @@ impl ModelValidator {
         models.sort_by(|a, b| {
             let a_is_free = a.pricing.prompt == "0" && a.pricing.completion == "0";
             let b_is_free = b.pricing.prompt == "0" && b.pricing.completion == "0";
-            
+
             match (a_is_free, b_is_free) {
-                (true, false) => std::cmp::Ordering::Less,    // Free comes first
+                (true, false) => std::cmp::Ordering::Less, // Free comes first
                 (false, true) => std::cmp::Ordering::Greater, // Paid comes after
-                _ => a.name.cmp(&b.name),                     // Same type, sort by name
+                _ => a.name.cmp(&b.name),                  // Same type, sort by name
             }
         });
 
