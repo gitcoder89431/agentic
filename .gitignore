@@ -1,2 +1,64 @@
-/target
+/agentic_v1/
+# Rust/Cargo
+target/
+**/target/
+Cargo.lock
+
+# IDEs and editors
+.idea/
+.vscode/
+*.swp
+*.swo
+*.swn
+*.bak
+*.tmp
+*.DS_Store
+*.iml
+
+# OS files
 .DS_Store
+Thumbs.db
+ehthumbs.db
+Icon?
+._*
+
+# Logs
+*.log
+
+# Byproducts
+*.rlib
+*.rmeta
+*.d
+*.o
+*.so
+*.dylib
+*.dll
+*.exe
+*.a
+*.lib
+*.pyc
+*.pyo
+*.pyd
+*.class
+
+# Test output
+*.profraw
+*.profdata
+*.gcda
+*.gcno
+*.gcov
+
+# Backup files
+*~
+*.old
+*.orig
+
+# Node/npm (if any JS tooling is used)
+node_modules/
+
+# Misc
+/.env
+/.env.*
+config.toml
+ros_rules.md
+rust_rules.md

@@ -1,14 +1,39 @@
-[package]
-name = "agentic"
-version = "0.1.0"
-edition = "2024"
+[workspace]
+members = [
+    "crates/agentic-core",
+    "crates/agentic-tui",
+    "crates/starlit-gui",
+]
+default-members = ["crates/agentic-tui"]
+resolver = "2"
 
-[dependencies]
-ratatui = { version = "0.27", features = ["all-widgets"] }
-tokio = { version = "1.0", features = ["full"] }
-taffy = "0.4"
-crossterm = "0.27"
-reqwest = { version = "0.11", features = ["json"] }
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-dirs = "5.0"
+[workspace.dependencies]
+anyhow = "1.0.82"
+crossterm = "0.27.0"
+figment = { version = "0.10.19", features = ["toml", "env"] }
+ratatui = { version = "0.26.2", features = ["crossterm"] }
+serde = { version = "1.0.197", features = ["derive"] }
+serde_json = "1.0.115"
+tokio = { version = "1.37.0", features = ["full"] }
+toml = "0.8.12"
+tracing = "0.1.40"
+tracing-subscriber = "0.3.18"
+thiserror = "1.0.61"
+reqwest = { version = "0.12.5", features = ["json"] }
+taffy = "0.4.0"
+directories = "5.0.1"
+strum = { version = "0.26.3", features = ["derive"] }
+strum_macros = "0.26.3"
+itertools = "0.13.0"
+lazy_static = "1.5.0"
+uuid = { version = "1.9.1", features = ["v4"] }
+async-trait = "0.1.80"
+futures = "0.3.30"
+signal-hook = "0.3.17"
+textwrap = "0.16.1"
+unicode-width = "0.1.13"
+
+[workspace.lints.rust]
+dead_code = "warn"
+
+

@@ -1,3 +1,4 @@
+// theme.rs
 //! Everforest Theme System for Agentic
 //!
 //! Implements a comprehensive theming architecture with Everforest Dark/Light variants.
@@ -32,7 +33,7 @@ pub struct ColorPalette {
     pub border: Color,
     pub selection: Color,
     pub cursor: Color,
-    pub warning: Color,  // Yellow/orange for settings
+    pub warning: Color, // Yellow/orange for settings
 }
 
 /// UI element types for styling
