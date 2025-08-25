@@ -6,13 +6,19 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph},
 };
 
-pub fn render_footer(frame: &mut Frame, area: Rect, theme: &Theme, mode: AppMode, chat_input: &str) {
+pub fn render_footer(
+    frame: &mut Frame,
+    area: Rect,
+    theme: &Theme,
+    mode: AppMode,
+    chat_input: &str,
+) {
     let footer_block = Block::default()
         .borders(Borders::ALL)
         .style(theme.ratatui_style(Element::Active));
 
     let inner_area = footer_block.inner(area);
-    
+
     let content = match mode {
         AppMode::Chat => {
             // Chat input field with cursor
@@ -21,17 +27,17 @@ pub fn render_footer(frame: &mut Frame, area: Rect, theme: &Theme, mode: AppMode
             } else {
                 chat_input
             };
-            
+
             let mut spans = vec![
                 Span::styled("💬 ", theme.ratatui_style(Element::Accent)),
                 Span::styled(display_text, theme.text_style()),
             ];
-            
+
             // Add cursor when in chat mode
             if !chat_input.is_empty() || area.width > 50 {
                 spans.push(Span::styled("_", theme.highlight_style()));
             }
-            
+
             Line::from(spans)
         }
         _ => {

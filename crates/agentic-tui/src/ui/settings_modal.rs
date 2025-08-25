@@ -139,15 +139,9 @@ pub fn render_settings_modal(
 
     // Action Text
     let action_text = match mode {
-        AppMode::EditingApiKey => {
-            "[ENTER] Save | [CTRL+V] Paste | [ESC] Cancel"
-        },
-        AppMode::EditingEndpoint => {
-            "[ENTER] Save | [ESC] Cancel"
-        },
-        _ => {
-            "[ENTER] Edit | [↑↓] Navigate | [S]ave | [R]eturn"
-        }
+        AppMode::EditingApiKey => "[ENTER] Save | [CTRL+V] Paste | [ESC] Cancel",
+        AppMode::EditingEndpoint => "[ENTER] Save | [ESC] Cancel",
+        _ => "[ENTER] Edit | [↑↓] Navigate | [S]ave | [R]eturn",
     };
     let action_style = if selection == SettingsSelection::Save {
         theme.highlight_style()
@@ -164,13 +158,13 @@ fn format_api_key_display(api_key: &str) -> String {
     if api_key.is_empty() {
         return String::new();
     }
-    
+
     // For most API keys, show first 15 characters + "..." + last 3 characters
     // This gives us the pattern: "sk-or-v1-7d9200...3ac" (21 chars total)
     if api_key.len() <= 21 {
         // If it's already short enough, just return it
         api_key.to_string()
     } else {
-        format!("{}...{}", &api_key[..15], &api_key[api_key.len()-3..])
+        format!("{}...{}", &api_key[..15], &api_key[api_key.len() - 3..])
     }
 }

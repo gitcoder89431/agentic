@@ -15,11 +15,7 @@ pub struct ModelSelectionParams<'a> {
     pub models_per_page: usize,
 }
 
-pub fn render_model_selection_modal(
-    frame: &mut Frame,
-    area: Rect,
-    params: ModelSelectionParams,
-) {
+pub fn render_model_selection_modal(frame: &mut Frame, area: Rect, params: ModelSelectionParams) {
     let block = Block::new()
         .title(params.title)
         .borders(Borders::ALL)
@@ -52,10 +48,15 @@ pub fn render_model_selection_modal(
     let total_pages = params.models.len().div_ceil(params.models_per_page);
     let start_index = params.current_page * params.models_per_page;
     let end_index = std::cmp::min(start_index + params.models_per_page, params.models.len());
-    
+
     // Page indicator
     let page_info = if total_pages > 1 {
-        format!("Page {} of {} ({} models)", params.current_page + 1, total_pages, params.models.len())
+        format!(
+            "Page {} of {} ({} models)",
+            params.current_page + 1,
+            total_pages,
+            params.models.len()
+        )
     } else {
         format!("{} models", params.models.len())
     };
@@ -66,7 +67,7 @@ pub fn render_model_selection_modal(
 
     // Get models for current page
     let page_models = &params.models[start_index..end_index];
-    
+
     // Create list items for current page
     let items: Vec<ListItem> = page_models
         .iter()
@@ -88,10 +89,7 @@ pub fn render_model_selection_modal(
             } else {
                 // Show name and info in columns when both are present
                 Line::from(vec![
-                    Span::styled(
-                        format!("{:<40}", name),
-                        style.add_modifier(Modifier::BOLD),
-                    ),
+                    Span::styled(format!("{:<40}", name), style.add_modifier(Modifier::BOLD)),
                     Span::styled(format!("{:>15}", info), style),
                 ])
             };
