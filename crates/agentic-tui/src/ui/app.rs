@@ -1,6 +1,9 @@
 use super::{
-    chat::render_chat, footer::render_footer, header::render_header,
-    model_selection_modal::{render_model_selection_modal, ModelSelectionParams}, settings_modal::render_settings_modal,
+    chat::render_chat,
+    footer::render_footer,
+    header::render_header,
+    model_selection_modal::{render_model_selection_modal, ModelSelectionParams},
+    settings_modal::render_settings_modal,
 };
 use agentic_core::{
     models::{ModelValidator, OllamaModel, OpenRouterModel},
@@ -169,7 +172,13 @@ impl App {
                 self.agent_status,
                 &self.settings,
             );
-            render_footer(frame, app_chunks[2], &self.theme, self.mode, &self.edit_buffer);
+            render_footer(
+                frame,
+                app_chunks[2],
+                &self.theme,
+                self.mode,
+                &self.edit_buffer,
+            );
 
             if matches!(
                 self.mode,
@@ -200,7 +209,11 @@ impl App {
                 frame.render_widget(Clear, modal_area); // clears the background
 
                 if self.mode == AppMode::SelectingLocalModel {
-                    let local_models = self.available_local_models.iter().map(|m| (m.name.clone(), m.size.to_string())).collect::<Vec<_>>();
+                    let local_models = self
+                        .available_local_models
+                        .iter()
+                        .map(|m| (m.name.clone(), m.size.to_string()))
+                        .collect::<Vec<_>>();
                     render_model_selection_modal(
                         frame,
                         modal_area,
@@ -239,7 +252,14 @@ impl App {
                     );
                 }
             } else {
-                render_chat(frame, app_chunks[1], &self.theme, self.mode, &self.edit_buffer, self.agent_status);
+                render_chat(
+                    frame,
+                    app_chunks[1],
+                    &self.theme,
+                    self.mode,
+                    &self.edit_buffer,
+                    self.agent_status,
+                );
             }
         })?;
         Ok(())
@@ -443,7 +463,8 @@ impl App {
                                 }
                             }
                             KeyCode::Down => {
-                                if self.selected_model_index + 1 < self.available_local_models.len() {
+                                if self.selected_model_index + 1 < self.available_local_models.len()
+                                {
                                     self.selected_model_index += 1;
                                     self.adjust_page_for_selection();
                                 }
@@ -476,7 +497,8 @@ impl App {
                                 }
                             }
                             KeyCode::Down => {
-                                if self.selected_model_index + 1 < self.available_cloud_models.len() {
+                                if self.selected_model_index + 1 < self.available_cloud_models.len()
+                                {
                                     self.selected_model_index += 1;
                                     self.adjust_page_for_selection();
                                 }
@@ -574,7 +596,7 @@ impl App {
 
     fn handle_chat_message(&mut self) {
         let message = self.edit_buffer.trim().to_string();
-        
+
         if message.starts_with('/') {
             // Handle slash commands
             self.handle_slash_command(&message);
@@ -584,7 +606,7 @@ impl App {
             // For now, just clear the input
             println!("Chat message: {}", message);
         }
-        
+
         // Clear input after processing
         self.edit_buffer.clear();
     }
@@ -688,7 +710,7 @@ impl App {
         // Always create a new channel and spawn the task
         let (tx, rx) = mpsc::unbounded_channel();
         self.validation_rx = Some(rx);
-        
+
         // Spawn async task to fetch cloud models
         let api_key = self.settings.api_key.clone();
         tokio::spawn(async move {
@@ -705,12 +727,15 @@ impl App {
     }
 
     fn format_cloud_models_with_emojis(&self) -> Vec<(String, String)> {
-        self.available_cloud_models.iter().map(|m| {
-            let is_free = m.pricing.prompt == "0" && m.pricing.completion == "0";
-            let emoji = if is_free { "🆓" } else { "💰" };
-            let name = format!("{} {}", emoji, m.name);
-            (name, String::new()) // No secondary info column
-        }).collect()
+        self.available_cloud_models
+            .iter()
+            .map(|m| {
+                let is_free = m.pricing.prompt == "0" && m.pricing.completion == "0";
+                let emoji = if is_free { "🆓" } else { "💰" };
+                let name = format!("{} {}", emoji, m.name);
+                (name, String::new()) // No secondary info column
+            })
+            .collect()
     }
 
     fn previous_page(&mut self) {

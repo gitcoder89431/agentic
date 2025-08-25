@@ -56,7 +56,14 @@ const GAP_HEIGHT: u16 = 1;
 const MAIN_TOTAL_HEIGHT: u16 = MAIN_LOGO_HEIGHT + GAP_HEIGHT + TEXT_HEIGHT;
 const SPIRAL_TOTAL_HEIGHT: u16 = SPIRAL_GALAXY_HEIGHT;
 
-pub fn render_chat(frame: &mut Frame, area: Rect, theme: &Theme, mode: AppMode, chat_input: &str, agent_status: AgentStatus) {
+pub fn render_chat(
+    frame: &mut Frame,
+    area: Rect,
+    theme: &Theme,
+    mode: AppMode,
+    chat_input: &str,
+    agent_status: AgentStatus,
+) {
     let chat_block = Block::new()
         .borders(Borders::ALL)
         .title(" 🤨 🔍 💡 ")
@@ -112,15 +119,42 @@ pub fn render_chat(frame: &mut Frame, area: Rect, theme: &Theme, mode: AppMode, 
 
             // Status-based message
             let (status_text, status_style) = match agent_status {
-                AgentStatus::Ready => ("Press [ENTER] to Start Ruixen", theme.ratatui_style(Element::Accent)),
-                AgentStatus::LocalEndpointError => ("⚠️  Local endpoint error - Check settings [S]", theme.ratatui_style(Element::Warning)),
-                AgentStatus::CloudEndpointError => ("⚠️  Cloud endpoint error - Check settings [S]", theme.ratatui_style(Element::Warning)),
-                AgentStatus::CheckLocalModel => ("⚠️  Local model not configured - Check settings [S]", theme.ratatui_style(Element::Warning)),
-                AgentStatus::CheckCloudModel => ("⚠️  Cloud model not configured - Check settings [S]", theme.ratatui_style(Element::Warning)),
-                AgentStatus::CheckApiKey => ("⚠️  API key not configured - Check settings [S]", theme.ratatui_style(Element::Warning)),
-                AgentStatus::ValidatingLocal => ("🔄 Validating local endpoint...", theme.ratatui_style(Element::Info)),
-                AgentStatus::ValidatingCloud => ("🔄 Validating cloud endpoint...", theme.ratatui_style(Element::Info)),
-                _ => ("Press [ENTER] when local and cloud models are ready", theme.ratatui_style(Element::Inactive)),
+                AgentStatus::Ready => (
+                    "Press [ENTER] to Start Ruixen",
+                    theme.ratatui_style(Element::Accent),
+                ),
+                AgentStatus::LocalEndpointError => (
+                    "⚠️  Local endpoint error - Check settings [S]",
+                    theme.ratatui_style(Element::Warning),
+                ),
+                AgentStatus::CloudEndpointError => (
+                    "⚠️  Cloud endpoint error - Check settings [S]",
+                    theme.ratatui_style(Element::Warning),
+                ),
+                AgentStatus::CheckLocalModel => (
+                    "⚠️  Local model not configured - Check settings [S]",
+                    theme.ratatui_style(Element::Warning),
+                ),
+                AgentStatus::CheckCloudModel => (
+                    "⚠️  Cloud model not configured - Check settings [S]",
+                    theme.ratatui_style(Element::Warning),
+                ),
+                AgentStatus::CheckApiKey => (
+                    "⚠️  API key not configured - Check settings [S]",
+                    theme.ratatui_style(Element::Warning),
+                ),
+                AgentStatus::ValidatingLocal => (
+                    "🔄 Validating local endpoint...",
+                    theme.ratatui_style(Element::Info),
+                ),
+                AgentStatus::ValidatingCloud => (
+                    "🔄 Validating cloud endpoint...",
+                    theme.ratatui_style(Element::Info),
+                ),
+                _ => (
+                    "Press [ENTER] when local and cloud models are ready",
+                    theme.ratatui_style(Element::Inactive),
+                ),
             };
 
             let status_paragraph = Paragraph::new(status_text)
