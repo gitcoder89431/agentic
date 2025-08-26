@@ -13,10 +13,7 @@ pub enum CloudError {
     ParseError,
 
     #[error("The cloud provider returned an unexpected error: {status}: {text}")]
-    ApiError {
-        status: u16,
-        text: String,
-    },
+    ApiError { status: u16, text: String },
 
     #[error(transparent)]
     RequestError(#[from] reqwest::Error),

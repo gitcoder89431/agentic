@@ -209,14 +209,12 @@ impl App {
                 let prefix = if is_selected { "> " } else { "  " };
                 let number = format!("{}. ", i + 1);
 
-                // Clean up the proposal text - remove template artifacts
+                // Clean up any remaining context artifacts for display
                 let proposal_text = proposal
-                    .replace("Context statement: ", "")
-                    .replace("Another context: ", "")
-                    .replace("Third context: ", "")
-                    .replace("Context statement - ", "")
-                    .replace("Another context - ", "")
-                    .replace("Third context - ", "");
+                    .replace("From a scientific perspective, ", "")
+                    .replace("As we explore ", "Exploring ")
+                    .trim()
+                    .to_string();
 
                 let style = if is_selected {
                     self.theme.ratatui_style(Element::Accent)
@@ -460,20 +458,13 @@ impl App {
                 self.render_coaching_tip_modal(frame, modal_area);
             } else if self.mode == AppMode::Complete {
                 let content = if let Some(note) = &self.cloud_response {
-                    use ratatui::text::{Line, Span};
-                    let title = note.header_tags.join(" • ");
-                    let title_style = self.theme.ratatui_style(Element::Accent);
-                    let body_style = self.theme.ratatui_style(Element::Text);
-
-                    let text = vec![
-                        Line::from(Span::styled(title, title_style)),
-                        Line::from(""), // Spacer
-                        Line::from(Span::styled(&note.body_text, body_style)),
-                    ];
-                    Paragraph::new(text)
+                    // Clean display - only show the synthesis content, hide system metadata
+                    Paragraph::new(note.body_text.as_str())
+                        .style(self.theme.ratatui_style(Element::Text))
                 } else {
                     // This case should ideally not be reached if mode is Complete
                     Paragraph::new("Waiting for synthesis...")
+                        .style(self.theme.ratatui_style(Element::Text))
                 };
 
                 let block = Block::default()
@@ -930,12 +921,33 @@ impl App {
                         },
                         AppMode::Complete => match key.code {
                             KeyCode::Up => {
-                                self.synthesis_scroll = self.synthesis_scroll.saturating_sub(1);
+                                // Save synthesis (positive action)
+                                self.save_synthesis();
+                                self.mode = AppMode::Normal;
+                                self.final_prompt.clear();
+                                self.proposals.clear();
+                                self.current_proposal_index = 0;
+                                self.cloud_response = None;
+                                self.synthesis_scroll = 0;
+                                self.agent_status = AgentStatus::Ready;
                             }
                             KeyCode::Down => {
-                                self.synthesis_scroll = self.synthesis_scroll.saturating_add(1);
+                                // Discard synthesis (negative action)
+                                self.mode = AppMode::Chat; // Start new query
+                                self.final_prompt.clear();
+                                self.proposals.clear();
+                                self.current_proposal_index = 0;
+                                self.cloud_response = None;
+                                self.synthesis_scroll = 0;
+                                self.agent_status = AgentStatus::Ready;
+                                self.edit_buffer.clear();
+                            }
+                            KeyCode::Left | KeyCode::Right => {
+                                // Keep horizontal scrolling for long content
+                                // Currently no horizontal scroll implemented
                             }
                             KeyCode::Enter | KeyCode::Esc => {
+                                // Fallback: return to normal without saving
                                 self.mode = AppMode::Normal;
                                 self.final_prompt.clear();
                                 self.proposals.clear();
@@ -1004,6 +1016,53 @@ impl App {
             });
         }
         self.edit_buffer.clear();
+    }
+
+    fn save_synthesis(&self) {
+        if let Some(note) = &self.cloud_response {
+            // Generate markdown content with v0.1.0 metadata structure
+            let timestamp = chrono::Utc::now().format("%Y-%m-%d_%H-%M-%S").to_string();
+            let filename = format!("synthesis_{}.md", timestamp);
+
+            // Get the selected proposal text
+            let proposal_text = if !self.proposals.is_empty()
+                && self.current_proposal_index < self.proposals.len()
+            {
+                &self.proposals[self.current_proposal_index]
+            } else {
+                "No proposal available"
+            };
+
+            // Use proposal text directly since the new prompt ensures proper format
+            let clean_proposal = proposal_text;
+
+            let markdown_content = format!(
+                "---\ndate: {}\nprovider: \"OPENROUTER\"\nmodel: \"{}\"\nquery: \"{}\"\nproposal: \"{}\"\ntags: [{}]\n---\n\n# {}\n\n{}\n",
+                chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC"),
+                if self.settings.cloud_model.is_empty() || self.settings.cloud_model == "[SELECT]" {
+                    "anthropic/claude-3.5-sonnet"
+                } else {
+                    &self.settings.cloud_model
+                },
+                self.final_prompt.replace("\"", "\\\""),
+                clean_proposal.replace("\"", "\\\""),
+                note.header_tags.iter().map(|tag| format!("\"{}\"", tag)).collect::<Vec<_>>().join(", "),
+                note.header_tags.join(" • "),
+                note.body_text
+            );
+
+            // Create Documents/ruixen directory if it doesn't exist
+            let home_dir = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+            let save_dir = format!("{}/Documents/ruixen", home_dir);
+            if std::fs::create_dir_all(&save_dir).is_err() {
+                // Silent fallback - don't crash the app
+                return;
+            }
+
+            let filepath = format!("{}/{}", save_dir, filename);
+            // Silent save - don't print debug logs that crash the TUI
+            let _ = std::fs::write(&filepath, markdown_content);
+        }
     }
 
     fn handle_cloud_synthesis(&mut self) {
