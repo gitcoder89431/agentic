@@ -125,8 +125,8 @@ pub struct App {
     cloud_response: Option<AtomicNote>,
     synthesis_scroll: u16,
     coaching_tip: (String, String),
-    local_tokens_used: u32,  // Token count for current local request
-    cloud_tokens_used: u32,  // Token count for current cloud request
+    local_tokens_used: u32, // Token count for current local request
+    cloud_tokens_used: u32, // Token count for current cloud request
 }
 
 impl App {
@@ -481,9 +481,9 @@ impl App {
 
                 // Create a compact area for the synthesis (60% width, ~12 lines height, centered)
                 let main_area = app_chunks[1];
-                let synthesis_width = (main_area.width * 60 / 100).max(40).min(80);
+                let synthesis_width = (main_area.width * 60 / 100).clamp(40, 80);
                 let synthesis_height = 12.min(main_area.height - 6);
-                
+
                 let synthesis_area = Rect::new(
                     main_area.x + (main_area.width.saturating_sub(synthesis_width)) / 2,
                     main_area.y + (main_area.height.saturating_sub(synthesis_height)) / 2,
@@ -954,8 +954,28 @@ impl App {
                                 }
                             }
                             KeyCode::Right => {
-                                // Scroll down through synthesis content
-                                self.synthesis_scroll += 1;
+                                // Scroll down through synthesis content with bounds checking
+                                if let Some(note) = &self.cloud_response {
+                                    // Calculate content height (number of lines when wrapped)
+                                    let content_width = 60; // Approximate usable width after borders
+                                    let lines: Vec<&str> = note.body_text.lines().collect();
+                                    let total_wrapped_lines = lines
+                                        .iter()
+                                        .map(|line| {
+                                            ((line.len() as f32 / content_width as f32).ceil()
+                                                as u16)
+                                                .max(1)
+                                        })
+                                        .sum::<u16>();
+
+                                    let display_height = 10; // Approximate usable height (12 - 2 for borders)
+                                    let max_scroll =
+                                        total_wrapped_lines.saturating_sub(display_height);
+
+                                    if self.synthesis_scroll < max_scroll {
+                                        self.synthesis_scroll += 1;
+                                    }
+                                }
                             }
                             KeyCode::Enter | KeyCode::Esc => {
                                 // Fallback: return to normal without saving
@@ -993,11 +1013,11 @@ impl App {
             // Handle regular chat message
             // Store the original user query for metadata
             self.original_user_query = message.clone();
-            
+
             // Estimate tokens for local request (rough: chars/4 + prompt overhead)
             self.local_tokens_used = (message.len() / 4) as u32 + 500; // ~500 tokens for prompt template
             self.cloud_tokens_used = 0; // Reset cloud tokens for new session
-            
+
             self.agent_status = AgentStatus::Orchestrating;
             let settings = self.settings.clone();
             let tx = self.agent_tx.clone();
@@ -1016,17 +1036,17 @@ impl App {
         self.edit_buffer.clear();
     }
 
-
     fn save_synthesis(&self) {
         if let Some(note) = &self.cloud_response {
             // Generate meaningful filename from query and metadata
             let timestamp = chrono::Utc::now();
             let date_part = timestamp.format("%Y-%m-%d").to_string();
-            
+
             // Extract keywords from original user query for filename
-            let keywords = self.extract_filename_keywords(&self.original_user_query, &note.header_tags);
+            let keywords =
+                self.extract_filename_keywords(&self.original_user_query, &note.header_tags);
             let time_suffix = timestamp.format("-%H%M").to_string(); // Add time for uniqueness
-            
+
             let filename = format!("{}-{}{}.md", date_part, keywords, time_suffix);
 
             // Get the selected proposal text
@@ -1042,13 +1062,17 @@ impl App {
             let clean_proposal = proposal_text;
 
             // Get model names for usage metadata
-            let local_model = if self.settings.local_model.is_empty() || self.settings.local_model == "[SELECT]" {
+            let local_model = if self.settings.local_model.is_empty()
+                || self.settings.local_model == "[SELECT]"
+            {
                 "unknown"
             } else {
                 &self.settings.local_model
             };
 
-            let cloud_model = if self.settings.cloud_model.is_empty() || self.settings.cloud_model == "[SELECT]" {
+            let cloud_model = if self.settings.cloud_model.is_empty()
+                || self.settings.cloud_model == "[SELECT]"
+            {
                 "anthropic/claude-3.5-sonnet"
             } else {
                 &self.settings.cloud_model
@@ -1056,9 +1080,11 @@ impl App {
 
             // Estimate token breakdown (rough estimates)
             let local_prompt_tokens = (self.original_user_query.len() / 4) as u32 + 200; // Query + template
-            let local_completion_tokens = self.local_tokens_used.saturating_sub(local_prompt_tokens);
-            let cloud_prompt_tokens = (self.final_prompt.len() / 4) as u32 + 150; // Proposal + synthesis template  
-            let cloud_completion_tokens = self.cloud_tokens_used.saturating_sub(cloud_prompt_tokens);
+            let local_completion_tokens =
+                self.local_tokens_used.saturating_sub(local_prompt_tokens);
+            let cloud_prompt_tokens = (self.final_prompt.len() / 4) as u32 + 150; // Proposal + synthesis template
+            let cloud_completion_tokens =
+                self.cloud_tokens_used.saturating_sub(cloud_prompt_tokens);
 
             let markdown_content = format!(
                 "---\ndate: {}\nprovider: \"OPENROUTER\"\nquery: \"{}\"\nproposal: \"{}\"\ntags: [{}]\n\nusage:\n  local_model: \"{}\"\n  local_prompt_tokens: {}\n  local_completion_tokens: {}\n  cloud_model: \"{}\"\n  cloud_prompt_tokens: {}\n  cloud_completion_tokens: {}\n---\n\n# {}\n\n{}\n",
@@ -1093,7 +1119,7 @@ impl App {
     fn handle_cloud_synthesis(&mut self) {
         // Set status to searching and trigger cloud API call
         self.agent_status = AgentStatus::Searching;
-        
+
         // Estimate tokens for cloud request (prompt + synthesis template)
         self.cloud_tokens_used = (self.final_prompt.len() / 4) as u32 + 300; // ~300 tokens for synthesis template
 
@@ -1264,9 +1290,9 @@ impl App {
             "the", "a", "an", "and", "or", "but", "in", "on", "at", "to", "for", "of", "with",
             "by", "is", "are", "was", "were", "be", "been", "have", "has", "had", "do", "does",
             "did", "will", "would", "could", "should", "can", "what", "where", "when", "why",
-            "how", "who", "which", "that", "this", "these", "those", "i", "you", "he", "she",
-            "it", "we", "they", "me", "him", "her", "us", "them", "my", "your", "his", "her",
-            "its", "our", "their"
+            "how", "who", "which", "that", "this", "these", "those", "i", "you", "he", "she", "it",
+            "we", "they", "me", "him", "her", "us", "them", "my", "your", "his", "her", "its",
+            "our", "their",
         ];
 
         // Extract meaningful words from query
@@ -1276,7 +1302,7 @@ impl App {
             .filter_map(|word| {
                 // Clean up punctuation
                 let clean_word = word.trim_matches(|c: char| !c.is_alphanumeric());
-                
+
                 // Filter out stop words and short words
                 if clean_word.len() >= 3 && !stop_words.contains(&clean_word) {
                     Some(clean_word.to_string())
@@ -1307,5 +1333,4 @@ impl App {
             }
         }
     }
-
 }

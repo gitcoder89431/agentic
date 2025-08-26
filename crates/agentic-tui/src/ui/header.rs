@@ -22,7 +22,8 @@ pub fn render_header(
     // Dynamic title based on what's actually configured - much smarter!
     let title = Title::from(" Agentic v0.1.0 ").alignment(Alignment::Left);
 
-    let (status_text, status_color) = build_smart_status_with_color(status, settings, local_tokens, cloud_tokens);
+    let (status_text, status_color) =
+        build_smart_status_with_color(status, settings, local_tokens, cloud_tokens);
 
     let status_span = Span::styled(status_text, Style::default().fg(status_color));
 
@@ -39,7 +40,12 @@ pub fn render_header(
     frame.render_widget(header_paragraph, area);
 }
 
-fn build_smart_status_with_color(status: AgentStatus, settings: &Settings, local_tokens: u32, cloud_tokens: u32) -> (String, Color) {
+fn build_smart_status_with_color(
+    status: AgentStatus,
+    settings: &Settings,
+    local_tokens: u32,
+    cloud_tokens: u32,
+) -> (String, Color) {
     // Show actual configuration state with model names always visible
     let local_configured = settings.local_model != "[SELECT]";
     let cloud_configured =
@@ -72,7 +78,11 @@ fn build_smart_status_with_color(status: AgentStatus, settings: &Settings, local
                 format!(" | ({})", format_single_tokens(local))
             }
             AgentStatus::Searching if local > 0 && cloud > 0 => {
-                format!(" | ({}) + ({})", format_single_tokens(local), format_single_tokens(cloud))
+                format!(
+                    " | ({}) + ({})",
+                    format_single_tokens(local),
+                    format_single_tokens(cloud)
+                )
             }
             AgentStatus::Complete if local > 0 => {
                 let total = local + cloud;
@@ -82,7 +92,7 @@ fn build_smart_status_with_color(status: AgentStatus, settings: &Settings, local
                     format!(" | ({})", format_single_tokens(local))
                 }
             }
-            _ => String::new()
+            _ => String::new(),
         }
     };
 
@@ -103,28 +113,55 @@ fn build_smart_status_with_color(status: AgentStatus, settings: &Settings, local
             format!("Ruixen :: {} :: [CONFIGURE API KEY]", local_display)
         }
         AgentStatus::ValidatingLocal => {
-            format!("Ruixen :: [CHECKING {}] :: {}", local_display, cloud_display)
+            format!(
+                "Ruixen :: [CHECKING {}] :: {}",
+                local_display, cloud_display
+            )
         }
         AgentStatus::ValidatingCloud => {
-            format!("Ruixen :: {} :: [CHECKING {}]", local_display, cloud_display)
+            format!(
+                "Ruixen :: {} :: [CHECKING {}]",
+                local_display, cloud_display
+            )
         }
         AgentStatus::LocalEndpointError => {
-            format!("Ruixen :: [ERROR: {} UNREACHABLE] :: {}", local_display, cloud_display)
+            format!(
+                "Ruixen :: [ERROR: {} UNREACHABLE] :: {}",
+                local_display, cloud_display
+            )
         }
         AgentStatus::CloudEndpointError => {
-            format!("Ruixen :: {} :: [ERROR: {} UNREACHABLE]", local_display, cloud_display)
+            format!(
+                "Ruixen :: {} :: [ERROR: {} UNREACHABLE]",
+                local_display, cloud_display
+            )
         }
         AgentStatus::Orchestrating => {
             // Show local tokens during orchestration
-            format!("Ruixen :: {} :: {}{}", local_display, cloud_display, format_token_display(local_tokens, cloud_tokens, status))
+            format!(
+                "Ruixen :: {} :: {}{}",
+                local_display,
+                cloud_display,
+                format_token_display(local_tokens, cloud_tokens, status)
+            )
         }
         AgentStatus::Searching => {
             // Show local + cloud tokens during synthesis
-            format!("Ruixen :: {} :: {}{}", local_display, cloud_display, format_token_display(local_tokens, cloud_tokens, status))
+            format!(
+                "Ruixen :: {} :: {}{}",
+                local_display,
+                cloud_display,
+                format_token_display(local_tokens, cloud_tokens, status)
+            )
         }
         AgentStatus::Complete => {
             // Show total bill (red color applied later)
-            format!("Ruixen :: {} :: {}{}", local_display, cloud_display, format_token_display(local_tokens, cloud_tokens, status))
+            format!(
+                "Ruixen :: {} :: {}{}",
+                local_display,
+                cloud_display,
+                format_token_display(local_tokens, cloud_tokens, status)
+            )
         }
     };
 

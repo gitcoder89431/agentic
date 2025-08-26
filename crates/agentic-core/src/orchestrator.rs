@@ -28,7 +28,6 @@ You MUST generate EXACTLY 3 proposals about this query: "{query}"
 }
 "#;
 
-
 #[derive(Deserialize, Debug)]
 struct ProposalObject {
     context: String,
@@ -46,7 +45,6 @@ enum ProposalItem {
 struct ProposalsResponse {
     proposals: Vec<ProposalItem>,
 }
-
 
 pub async fn generate_proposals(
     query: &str,
@@ -97,4 +95,3 @@ pub async fn generate_proposals(
         ))
     }
 }
-
