@@ -1,5 +1,5 @@
 use super::{
-    chat::render_chat,
+    chat::{render_chat, AutocompleteParams},
     footer::render_footer,
     header::render_header,
     model_selection_modal::{render_model_selection_modal, ModelSelectionParams},
@@ -127,6 +127,8 @@ pub struct App {
     coaching_tip: (String, String),
     local_tokens_used: u32, // Token count for current local request
     cloud_tokens_used: u32, // Token count for current cloud request
+    show_autocomplete: bool,
+    autocomplete_index: usize,
 }
 
 impl App {
@@ -158,6 +160,8 @@ impl App {
             coaching_tip: (String::new(), String::new()),
             local_tokens_used: 0,
             cloud_tokens_used: 0,
+            show_autocomplete: false,
+            autocomplete_index: 0,
         }
     }
 
@@ -510,6 +514,11 @@ impl App {
                     self.mode,
                     &self.edit_buffer,
                     self.agent_status,
+                    AutocompleteParams {
+                        show: self.show_autocomplete,
+                        commands: &self.get_filtered_slash_commands(),
+                        selected_index: self.autocomplete_index,
+                    },
                 );
             }
         })?;
@@ -711,7 +720,14 @@ impl App {
                                     self.attempt_start();
                                 }
                             }
-                            // TODO: Handle 'a' for About mode
+                            KeyCode::Char('a') => {
+                                // Show About modal - same as /about command
+                                self.coaching_tip = (
+                                    "About RuixenOS v0.1.0".to_string(),
+                                    "🎯 The Curiosity Machine\nTransforming queries into thoughtful Ruixen inquiries since 2025.\nBuilt with Rust, ratatui, and endless wonder.".to_string(),
+                                );
+                                self.mode = AppMode::CoachingTip;
+                            }
                             _ => {}
                         },
                         AppMode::Settings => match key.code {
@@ -863,15 +879,49 @@ impl App {
                                 // Return to Normal mode
                                 self.mode = AppMode::Normal;
                                 self.edit_buffer.clear();
+                                self.show_autocomplete = false;
                             }
                             KeyCode::Enter => {
-                                // Process chat message
-                                if !self.edit_buffer.is_empty() {
+                                if self.show_autocomplete
+                                    && !self.get_filtered_slash_commands().is_empty()
+                                {
+                                    // Apply selected autocomplete suggestion
+                                    let filtered = self.get_filtered_slash_commands();
+                                    let selected_command = &filtered[self.autocomplete_index].0;
+                                    self.edit_buffer = selected_command.clone();
+                                    self.show_autocomplete = false;
+                                } else if !self.edit_buffer.is_empty() {
                                     self.handle_chat_message();
+                                    self.show_autocomplete = false;
+                                }
+                            }
+                            KeyCode::Tab => {
+                                if self.show_autocomplete
+                                    && !self.get_filtered_slash_commands().is_empty()
+                                {
+                                    // Apply selected autocomplete suggestion
+                                    let filtered = self.get_filtered_slash_commands();
+                                    let selected_command = &filtered[self.autocomplete_index].0;
+                                    self.edit_buffer = selected_command.clone();
+                                    self.show_autocomplete = false;
+                                }
+                            }
+                            KeyCode::Up if self.show_autocomplete => {
+                                if self.autocomplete_index > 0 {
+                                    self.autocomplete_index -= 1;
+                                }
+                            }
+                            KeyCode::Down if self.show_autocomplete => {
+                                let filtered_commands = self.get_filtered_slash_commands();
+                                if self.autocomplete_index
+                                    < filtered_commands.len().saturating_sub(1)
+                                {
+                                    self.autocomplete_index += 1;
                                 }
                             }
                             KeyCode::Backspace => {
                                 self.edit_buffer.pop();
+                                self.update_autocomplete();
                             }
                             KeyCode::Char('v') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                                 // Ctrl+V: Allow pasting in chat
@@ -881,6 +931,7 @@ impl App {
                             }
                             KeyCode::Char(c) => {
                                 self.edit_buffer.push(c);
+                                self.update_autocomplete();
                             }
                             _ => {}
                         },
@@ -1000,8 +1051,13 @@ impl App {
                         },
                         AppMode::CoachingTip => match key.code {
                             KeyCode::Enter | KeyCode::Esc => {
-                                // Return to chat mode to try again
-                                self.mode = AppMode::Chat;
+                                // About modal should return to main menu, errors return to chat
+                                if self.coaching_tip.0.contains("About RuixenOS") {
+                                    self.mode = AppMode::Normal;
+                                } else {
+                                    // Error messages return to chat to try again
+                                    self.mode = AppMode::Chat;
+                                }
                             }
                             _ => {}
                         },
@@ -1152,17 +1208,45 @@ impl App {
             "/quit" | "/exit" => {
                 self.should_quit = true;
             }
-            "/theme" => {
-                self.theme.toggle();
-                self.settings.theme = self.theme.variant();
-                if let Err(e) = self.settings.save() {
-                    eprintln!("Warning: Failed to save settings: {}", e);
-                }
-            }
             _ => {
                 // Unknown command - could show help message or ignore
-                println!("Unknown command: {}", command);
+                self.coaching_tip = (
+                    "Unknown Command".to_string(),
+                    format!("Command '{}' not recognized. Try /settings or /quit", command),
+                );
+                self.mode = AppMode::CoachingTip;
             }
+        }
+    }
+
+    fn update_autocomplete(&mut self) {
+        if self.edit_buffer.starts_with('/') {
+            let filtered = self.get_filtered_slash_commands();
+            self.show_autocomplete = !filtered.is_empty();
+            self.autocomplete_index = 0; // Reset selection to top
+        } else {
+            self.show_autocomplete = false;
+        }
+    }
+
+    fn get_filtered_slash_commands(&self) -> Vec<(String, String)> {
+        // Only 2 slash commands - About is main menu only
+        let available_commands = vec![
+            ("/settings".to_string(), "Configure app settings".to_string()),
+            ("/quit".to_string(), "Exit the application".to_string()),
+        ];
+        
+        if self.edit_buffer == "/" {
+            // Show all commands when just "/" is typed
+            available_commands
+        } else if self.edit_buffer.starts_with('/') {
+            // Filter commands based on what's typed
+            available_commands
+                .into_iter()
+                .filter(|(cmd, _)| cmd.starts_with(&self.edit_buffer))
+                .collect()
+        } else {
+            vec![]
         }
     }
 
