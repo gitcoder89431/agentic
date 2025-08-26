@@ -5,6 +5,12 @@ use serde_json::Value;
 use std::time::Duration;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AtomicNote {
+    pub header_tags: Vec<String>,
+    pub body_text: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OllamaModel {
     pub name: String,
     pub size: String,
