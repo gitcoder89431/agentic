@@ -33,6 +33,7 @@ pub enum AppMode {
     Orchestrating,
     Revising,
     Complete,
+    CoachingTip,
     // TODO: Add About mode
 }
 
@@ -198,14 +199,14 @@ impl App {
                 let prefix = if is_selected { "> " } else { "  " };
                 let number = format!("{}. ", i + 1);
 
-                // Split proposal into sentences (max 2) and wrap
-                let sentences: Vec<&str> = proposal.split(". ").take(2).collect();
-
-                let proposal_text = if sentences.len() > 1 {
-                    format!("{} {}", sentences[0], sentences.get(1).unwrap_or(&""))
-                } else {
-                    proposal.clone()
-                };
+                // Clean up the proposal text - remove template artifacts
+                let proposal_text = proposal
+                    .replace("Context statement: ", "")
+                    .replace("Another context: ", "")  
+                    .replace("Third context: ", "")
+                    .replace("Context statement - ", "")
+                    .replace("Another context - ", "")
+                    .replace("Third context - ", "");
 
                 let style = if is_selected {
                     self.theme.ratatui_style(Element::Accent)
@@ -225,7 +226,8 @@ impl App {
 
         let proposals_paragraph = Paragraph::new(proposal_lines)
             .style(self.theme.ratatui_style(Element::Text))
-            .wrap(Wrap { trim: true });
+            .wrap(Wrap { trim: true })
+            .scroll((self.current_proposal_index as u16 * 3, 0)); // Scroll to selected proposal
 
         frame.render_widget(proposals_paragraph, chunks[1]);
 
@@ -236,6 +238,58 @@ impl App {
             .style(self.theme.ratatui_style(Element::Inactive));
 
         frame.render_widget(footer, chunks[2]);
+    }
+
+    fn render_coaching_tip_modal(&self, frame: &mut ratatui::Frame, area: Rect) {
+        use ratatui::{
+            prelude::Alignment,
+            text::{Line, Span},
+            widgets::Paragraph,
+        };
+
+        let block = Block::default()
+            .title(" Coaching Tip ")
+            .borders(Borders::ALL)
+            .style(self.theme.ratatui_style(Element::Active));
+
+        let inner_area = block.inner(area);
+        frame.render_widget(block, area);
+
+        // Split area: message + tips
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Min(5),    // Main message (flexible)
+                Constraint::Length(3), // Tips footer
+            ])
+            .split(inner_area);
+
+        // Main coaching message with tips
+        let message_text = vec![
+            Line::from(""),
+            Line::from("Ruixen is having a tough time with this abstract query. Smaller"),
+            Line::from("local models work best with clear and concrete questions."),
+            Line::from(""),
+            Line::from(":: Try a more direct question, add specific context, or break"),
+            Line::from("   the query down into smaller steps."),
+            Line::from(""),
+        ];
+
+        let message = Paragraph::new(message_text)
+            .alignment(Alignment::Center)
+            .style(self.theme.ratatui_style(Element::Text))
+            .wrap(Wrap { trim: true });
+
+        frame.render_widget(message, chunks[0]);
+
+        // Navigation footer
+        let footer_text = "Press [ESC] to return.";
+        let footer = Paragraph::new(footer_text)
+            .alignment(Alignment::Center)
+            .style(self.theme.ratatui_style(Element::Inactive))
+            .wrap(Wrap { trim: true });
+
+        frame.render_widget(footer, chunks[1]);
     }
 
     pub async fn run(&mut self, terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()> {
@@ -391,6 +445,23 @@ impl App {
                 );
                 frame.render_widget(Clear, modal_area);
                 self.render_synthesize_modal(frame, modal_area);
+            } else if self.mode == AppMode::CoachingTip {
+                // Render the Coaching Tip modal
+                let size = frame.size();
+                let modal_width = (((size.width as f32) * 0.7).round() as u16)
+                    .clamp(50, 70)
+                    .min(size.width);
+                let modal_height = (((size.height as f32) * 0.4).round() as u16)
+                    .clamp(10, 15)
+                    .min(size.height);
+                let modal_area = Rect::new(
+                    (size.width.saturating_sub(modal_width)) / 2,
+                    (size.height.saturating_sub(modal_height)) / 2,
+                    modal_width,
+                    modal_height,
+                );
+                frame.render_widget(Clear, modal_area);
+                self.render_coaching_tip_modal(frame, modal_area);
             } else if self.mode == AppMode::Complete {
                 let block = Block::default().title("Final Prompt").borders(Borders::ALL);
                 let paragraph = Paragraph::new(self.final_prompt.as_str())
@@ -516,6 +587,8 @@ impl App {
                 self.agent_status = AgentStatus::Ready;
             }
             AgentMessage::ProposalsGenerated(Err(_e)) => {
+                // Show coaching tip instead of just failing silently
+                self.mode = AppMode::CoachingTip;
                 self.agent_status = AgentStatus::Ready;
             }
             AgentMessage::RevisedProposalGenerated(Ok(proposal)) => {
@@ -811,6 +884,13 @@ impl App {
                                 self.final_prompt.clear();
                                 self.proposals.clear();
                                 self.current_proposal_index = 0;
+                            }
+                            _ => {}
+                        },
+                        AppMode::CoachingTip => match key.code {
+                            KeyCode::Enter | KeyCode::Esc => {
+                                // Return to chat mode to try again
+                                self.mode = AppMode::Chat;
                             }
                             _ => {}
                         },
