@@ -125,6 +125,8 @@ pub struct App {
     cloud_response: Option<AtomicNote>,
     synthesis_scroll: u16,
     coaching_tip: (String, String),
+    local_tokens_used: u32,  // Token count for current local request
+    cloud_tokens_used: u32,  // Token count for current cloud request
 }
 
 impl App {
@@ -154,6 +156,8 @@ impl App {
             cloud_response: None,
             synthesis_scroll: 0,
             coaching_tip: (String::new(), String::new()),
+            local_tokens_used: 0,
+            cloud_tokens_used: 0,
         }
     }
 
@@ -345,6 +349,8 @@ impl App {
                 &self.theme,
                 self.agent_status,
                 &self.settings,
+                self.local_tokens_used,
+                self.cloud_tokens_used,
             );
             render_footer(
                 frame,
@@ -473,10 +479,10 @@ impl App {
                         .alignment(ratatui::prelude::Alignment::Center)
                 };
 
-                // Create a centered area for the synthesis (70% width, centered vertically)
+                // Create a compact area for the synthesis (60% width, ~12 lines height, centered)
                 let main_area = app_chunks[1];
-                let synthesis_width = (main_area.width * 70 / 100).max(40).min(main_area.width);
-                let synthesis_height = 10; // Fixed height for the synthesis box
+                let synthesis_width = (main_area.width * 60 / 100).max(40).min(80);
+                let synthesis_height = 12.min(main_area.height - 6);
                 
                 let synthesis_area = Rect::new(
                     main_area.x + (main_area.width.saturating_sub(synthesis_width)) / 2,
@@ -655,6 +661,9 @@ impl App {
         if self.agent_status == AgentStatus::ValidatingCloud {
             self.agent_status = AgentStatus::Ready;
             self.start_agent_services();
+            // Automatically enter chat mode after successful validation
+            self.mode = AppMode::Chat;
+            self.edit_buffer.clear();
         }
     }
 
@@ -904,6 +913,8 @@ impl App {
                                 self.proposals.clear();
                                 self.current_proposal_index = 0;
                                 self.original_user_query.clear();
+                                self.local_tokens_used = 0;
+                                self.cloud_tokens_used = 0;
                             }
                             _ => {}
                         },
@@ -919,6 +930,8 @@ impl App {
                                 self.cloud_response = None;
                                 self.synthesis_scroll = 0;
                                 self.agent_status = AgentStatus::Ready;
+                                self.local_tokens_used = 0;
+                                self.cloud_tokens_used = 0;
                             }
                             KeyCode::Down => {
                                 // Discard synthesis (negative action)
@@ -931,10 +944,18 @@ impl App {
                                 self.synthesis_scroll = 0;
                                 self.agent_status = AgentStatus::Ready;
                                 self.edit_buffer.clear();
+                                self.local_tokens_used = 0;
+                                self.cloud_tokens_used = 0;
                             }
-                            KeyCode::Left | KeyCode::Right => {
-                                // Keep horizontal scrolling for long content
-                                // Currently no horizontal scroll implemented
+                            KeyCode::Left => {
+                                // Scroll up through synthesis content
+                                if self.synthesis_scroll > 0 {
+                                    self.synthesis_scroll -= 1;
+                                }
+                            }
+                            KeyCode::Right => {
+                                // Scroll down through synthesis content
+                                self.synthesis_scroll += 1;
                             }
                             KeyCode::Enter | KeyCode::Esc => {
                                 // Fallback: return to normal without saving
@@ -972,6 +993,10 @@ impl App {
             // Handle regular chat message
             // Store the original user query for metadata
             self.original_user_query = message.clone();
+            
+            // Estimate tokens for local request (rough: chars/4 + prompt overhead)
+            self.local_tokens_used = (message.len() / 4) as u32 + 500; // ~500 tokens for prompt template
+            self.cloud_tokens_used = 0; // Reset cloud tokens for new session
             
             self.agent_status = AgentStatus::Orchestrating;
             let settings = self.settings.clone();
@@ -1016,17 +1041,37 @@ impl App {
             // Use proposal text directly since the new prompt ensures proper format
             let clean_proposal = proposal_text;
 
+            // Get model names for usage metadata
+            let local_model = if self.settings.local_model.is_empty() || self.settings.local_model == "[SELECT]" {
+                "unknown"
+            } else {
+                &self.settings.local_model
+            };
+
+            let cloud_model = if self.settings.cloud_model.is_empty() || self.settings.cloud_model == "[SELECT]" {
+                "anthropic/claude-3.5-sonnet"
+            } else {
+                &self.settings.cloud_model
+            };
+
+            // Estimate token breakdown (rough estimates)
+            let local_prompt_tokens = (self.original_user_query.len() / 4) as u32 + 200; // Query + template
+            let local_completion_tokens = self.local_tokens_used.saturating_sub(local_prompt_tokens);
+            let cloud_prompt_tokens = (self.final_prompt.len() / 4) as u32 + 150; // Proposal + synthesis template  
+            let cloud_completion_tokens = self.cloud_tokens_used.saturating_sub(cloud_prompt_tokens);
+
             let markdown_content = format!(
-                "---\ndate: {}\nprovider: \"OPENROUTER\"\nmodel: \"{}\"\nquery: \"{}\"\nproposal: \"{}\"\ntags: [{}]\n---\n\n# {}\n\n{}\n",
+                "---\ndate: {}\nprovider: \"OPENROUTER\"\nquery: \"{}\"\nproposal: \"{}\"\ntags: [{}]\n\nusage:\n  local_model: \"{}\"\n  local_prompt_tokens: {}\n  local_completion_tokens: {}\n  cloud_model: \"{}\"\n  cloud_prompt_tokens: {}\n  cloud_completion_tokens: {}\n---\n\n# {}\n\n{}\n",
                 chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC"),
-                if self.settings.cloud_model.is_empty() || self.settings.cloud_model == "[SELECT]" {
-                    "anthropic/claude-3.5-sonnet"
-                } else {
-                    &self.settings.cloud_model
-                },
                 self.original_user_query.replace("\"", "\\\""),
                 clean_proposal.replace("\"", "\\\""),
                 note.header_tags.iter().map(|tag| format!("\"{}\"", tag)).collect::<Vec<_>>().join(", "),
+                local_model,
+                local_prompt_tokens,
+                local_completion_tokens,
+                cloud_model,
+                cloud_prompt_tokens,
+                cloud_completion_tokens,
                 note.header_tags.join(" • "),
                 note.body_text
             );
@@ -1048,6 +1093,9 @@ impl App {
     fn handle_cloud_synthesis(&mut self) {
         // Set status to searching and trigger cloud API call
         self.agent_status = AgentStatus::Searching;
+        
+        // Estimate tokens for cloud request (prompt + synthesis template)
+        self.cloud_tokens_used = (self.final_prompt.len() / 4) as u32 + 300; // ~300 tokens for synthesis template
 
         let prompt = self.final_prompt.clone();
         let api_key = self.settings.api_key.clone();
