@@ -284,7 +284,9 @@ impl App {
                 }
             } else if self.mode == AppMode::Orchestrating {
                 if let Some(proposal) = self.proposals.get(self.current_proposal_index) {
-                    let block = Block::default().title("Proposal Stone").borders(Borders::ALL);
+                    let block = Block::default()
+                        .title("Proposal Stone")
+                        .borders(Borders::ALL);
                     let paragraph = Paragraph::new(proposal.as_str())
                         .block(block)
                         .wrap(Wrap { trim: true });
@@ -658,7 +660,9 @@ impl App {
                         },
                         AppMode::Orchestrating => match key.code {
                             KeyCode::Char('s') => {
-                                if let Some(proposal) = self.proposals.get(self.current_proposal_index) {
+                                if let Some(proposal) =
+                                    self.proposals.get(self.current_proposal_index)
+                                {
                                     self.final_prompt = proposal.clone();
                                     self.mode = AppMode::Complete;
                                 }
