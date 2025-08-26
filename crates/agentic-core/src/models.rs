@@ -279,6 +279,49 @@ impl ModelValidator {
     }
 }
 
+#[derive(Serialize)]
+struct LocalGenerationRequest<'a> {
+    model: &'a str,
+    prompt: &'a str,
+    stream: bool,
+}
+
+#[derive(Deserialize)]
+struct LocalGenerationResponse {
+    response: String,
+}
+
+pub async fn call_local_model(
+    endpoint: &str,
+    model: &str,
+    prompt: &str,
+) -> Result<String, anyhow::Error> {
+    let client = Client::new();
+    let url = if endpoint.starts_with("http") {
+        format!("{}/api/generate", endpoint)
+    } else {
+        format!("http://{}/api/generate", endpoint)
+    };
+
+    let payload = LocalGenerationRequest {
+        model,
+        prompt,
+        stream: false,
+    };
+
+    let response = client.post(&url).json(&payload).send().await?;
+
+    if response.status().is_success() {
+        let gen_response: LocalGenerationResponse = response.json().await?;
+        Ok(gen_response.response)
+    } else {
+        Err(anyhow::anyhow!(
+            "Failed to get response from local model. Status: {}",
+            response.status()
+        ))
+    }
+}
+
 impl Default for ModelValidator {
     fn default() -> Self {
         Self::new()

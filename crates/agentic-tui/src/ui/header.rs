@@ -100,6 +100,9 @@ fn build_smart_status_with_color(status: AgentStatus, settings: &Settings) -> (S
                 local_display, cloud_display
             )
         }
+        AgentStatus::Orchestrating => {
+            format!("Ruixen :: [ORCHESTRATING] :: {}", cloud_display)
+        }
     };
 
     let color = match status {
@@ -113,6 +116,7 @@ fn build_smart_status_with_color(status: AgentStatus, settings: &Settings) -> (S
             }
         }
         AgentStatus::ValidatingLocal | AgentStatus::ValidatingCloud => Color::Yellow, // Testing in progress
+        AgentStatus::Orchestrating => Color::Cyan,
         AgentStatus::LocalEndpointError | AgentStatus::CloudEndpointError => Color::Red, // Connection failed
         _ => Color::Red, // Other validation failed
     };

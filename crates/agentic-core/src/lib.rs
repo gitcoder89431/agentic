@@ -11,6 +11,7 @@
 //! - `theme`: UI theming system
 
 pub mod models;
+pub mod orchestrator;
 pub mod settings;
 pub mod theme;
 
