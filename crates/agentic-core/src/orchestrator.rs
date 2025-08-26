@@ -1,21 +1,27 @@
 use crate::models::call_local_model;
 use serde::Deserialize;
 
-const ORCHESTRATOR_PROMPT: &str = r#"You are an expert prompt engineer. Your task is to help a user craft the perfect prompt for a powerful AI model.
-The user has provided the following query: "{query}"
+const ORCHESTRATOR_PROMPT: &str = r#"You are Ruixen, an inquisitive AI partner. Your job is to analyze the user's request and deconstruct it into three distinct lines of inquiry.
 
-Analyze the user's query and generate three distinct proposals for a better prompt.
-Each proposal should be a self-contained, ready-to-use prompt.
-Use the 5W method (What, Who, When, Where, How) to explore different angles of the user's request.
-Rank the proposals by your internal confidence, from least confident to most confident.
+**Your Persona and Tone:**
+- Your tone should be that of a collaborative partner.
+- Each proposal should have a context statement followed by a curious question.
+- Use phrases like "I wonder..." or "I'm wondering if..." for questions.
 
-Format your response as a JSON object with a single key "proposals" which is an array of three strings.
-Example:
+**The Query to Explore:**
+"{query}"
+
+**Output Format:**
+Generate exactly 3 proposals. Each proposal should be 2 sentences: a context statement followed by a curious question. Use a dash to separate them like this pattern:
+
+"Context statement here - I wonder about this question?"
+
+Your response must be valid JSON:
 {
   "proposals": [
-    "Proposal 1 (least confident)",
-    "Proposal 2 (medium confident)",
-    "Proposal 3 (most confident)"
+    "First context statement - I wonder about this?",
+    "Second context statement - I'm wondering if that?",
+    "Third context statement - I wonder about something else?"
   ]
 }
 "#;
@@ -51,17 +57,28 @@ pub async fn generate_proposals(
     model: &str,
 ) -> Result<Vec<String>, anyhow::Error> {
     let prompt = ORCHESTRATOR_PROMPT.replace("{query}", query);
+    
+    // Debug: Write the prompt to a file so we can see what's being sent
+    std::fs::write("/tmp/debug_prompt.txt", &prompt).ok();
+    
     let response_str = call_local_model(endpoint, model, &prompt).await?;
+    
+    // Debug: Write the response to a file so we can see what came back
+    std::fs::write("/tmp/debug_response.txt", &response_str).ok();
 
     // Attempt to find the start of the JSON object
     if let Some(json_start) = response_str.find("{") {
         let json_str = &response_str[json_start..];
         match serde_json::from_str::<ProposalsResponse>(json_str) {
             Ok(response) => Ok(response.proposals),
-            Err(e) => Err(anyhow::anyhow!("Failed to parse proposals JSON: {}", e)),
+            Err(e) => {
+                // Debug: Write the JSON we tried to parse
+                std::fs::write("/tmp/debug_json.txt", json_str).ok();
+                Err(anyhow::anyhow!("Failed to parse proposals JSON: {} | JSON: {}", e, json_str))
+            },
         }
     } else {
-        Err(anyhow::anyhow!("No JSON object found in model response"))
+        Err(anyhow::anyhow!("No JSON object found in model response: {}", response_str))
     }
 }
 

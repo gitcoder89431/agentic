@@ -146,6 +146,100 @@ impl App {
         }
     }
 
+    fn render_synthesize_modal(&self, frame: &mut ratatui::Frame, area: Rect) {
+        use ratatui::{
+            prelude::Alignment,
+            text::{Line, Span},
+            widgets::Paragraph,
+        };
+
+        let block = Block::default()
+            .title(" Synthesize Knowledge ")
+            .borders(Borders::ALL)
+            .style(self.theme.ratatui_style(Element::Active));
+
+        let inner_area = block.inner(area);
+        frame.render_widget(block, area);
+
+        if self.proposals.is_empty() {
+            let loading = Paragraph::new("Generating proposals...")
+                .alignment(Alignment::Center)
+                .style(self.theme.ratatui_style(Element::Info));
+            frame.render_widget(loading, inner_area);
+            return;
+        }
+
+        // Header text
+        let header = Paragraph::new("Ruixen has a few lines of inquiry. Select the best one to pursue:")
+            .alignment(Alignment::Left)
+            .style(self.theme.ratatui_style(Element::Text))
+            .wrap(Wrap { trim: true });
+
+        // Split area: header + proposals + footer
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(3), // Header
+                Constraint::Min(6),    // Proposals (flexible)
+                Constraint::Length(3), // Footer
+            ])
+            .split(inner_area);
+
+        frame.render_widget(header, chunks[0]);
+
+        // Render proposals
+        let proposal_lines: Vec<Line> = self
+            .proposals
+            .iter()
+            .enumerate()
+            .flat_map(|(i, proposal)| {
+                let is_selected = i == self.current_proposal_index;
+                let prefix = if is_selected { "> " } else { "  " };
+                let number = format!("{}. ", i + 1);
+                
+                // Split proposal into sentences (max 2) and wrap
+                let sentences: Vec<&str> = proposal
+                    .split(". ")
+                    .take(2)
+                    .collect();
+                
+                let proposal_text = if sentences.len() > 1 {
+                    format!("{} {}", sentences[0], sentences.get(1).unwrap_or(&""))
+                } else {
+                    proposal.clone()
+                };
+
+                let style = if is_selected {
+                    self.theme.ratatui_style(Element::Accent)
+                } else {
+                    self.theme.ratatui_style(Element::Text)
+                };
+
+                vec![
+                    Line::from(vec![
+                        Span::styled(format!("{}{}", prefix, number), style),
+                        Span::styled(proposal_text, style),
+                    ]),
+                    Line::from(""), // Empty line between proposals
+                ]
+            })
+            .collect();
+
+        let proposals_paragraph = Paragraph::new(proposal_lines)
+            .style(self.theme.ratatui_style(Element::Text))
+            .wrap(Wrap { trim: true });
+
+        frame.render_widget(proposals_paragraph, chunks[1]);
+
+        // Footer with controls
+        let footer_text = "[Enter] Synthesize | [E]dit Selected | [ESC] Cancel";
+        let footer = Paragraph::new(footer_text)
+            .alignment(Alignment::Center)
+            .style(self.theme.ratatui_style(Element::Inactive));
+
+        frame.render_widget(footer, chunks[2]);
+    }
+
     pub async fn run(&mut self, terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()> {
         while !self.should_quit {
             self.draw(terminal)?;
@@ -283,15 +377,22 @@ impl App {
                     );
                 }
             } else if self.mode == AppMode::Orchestrating {
-                if let Some(proposal) = self.proposals.get(self.current_proposal_index) {
-                    let block = Block::default()
-                        .title("Proposal Stone")
-                        .borders(Borders::ALL);
-                    let paragraph = Paragraph::new(proposal.as_str())
-                        .block(block)
-                        .wrap(Wrap { trim: true });
-                    frame.render_widget(paragraph, app_chunks[1]);
-                }
+                // Render the Synthesize Knowledge modal
+                let size = frame.size();
+                let modal_width = (((size.width as f32) * 0.8).round() as u16)
+                    .clamp(50, 80)
+                    .min(size.width);
+                let modal_height = (((size.height as f32) * 0.6).round() as u16)
+                    .clamp(15, 25)
+                    .min(size.height);
+                let modal_area = Rect::new(
+                    (size.width.saturating_sub(modal_width)) / 2,
+                    (size.height.saturating_sub(modal_height)) / 2,
+                    modal_width,
+                    modal_height,
+                );
+                frame.render_widget(Clear, modal_area);
+                self.render_synthesize_modal(frame, modal_area);
             } else if self.mode == AppMode::Complete {
                 let block = Block::default().title("Final Prompt").borders(Borders::ALL);
                 let paragraph = Paragraph::new(self.final_prompt.as_str())
@@ -417,7 +518,6 @@ impl App {
                 self.agent_status = AgentStatus::Ready;
             }
             AgentMessage::ProposalsGenerated(Err(_e)) => {
-                // TODO: Set error state and display to user
                 self.agent_status = AgentStatus::Ready;
             }
             AgentMessage::RevisedProposalGenerated(Ok(proposal)) => {
@@ -659,7 +759,18 @@ impl App {
                             _ => {}
                         },
                         AppMode::Orchestrating => match key.code {
-                            KeyCode::Char('s') => {
+                            KeyCode::Up => {
+                                if self.current_proposal_index > 0 {
+                                    self.current_proposal_index -= 1;
+                                }
+                            }
+                            KeyCode::Down => {
+                                if self.current_proposal_index + 1 < self.proposals.len() {
+                                    self.current_proposal_index += 1;
+                                }
+                            }
+                            KeyCode::Enter => {
+                                // Synthesize - use selected proposal
                                 if let Some(proposal) =
                                     self.proposals.get(self.current_proposal_index)
                                 {
@@ -667,15 +778,16 @@ impl App {
                                     self.mode = AppMode::Complete;
                                 }
                             }
-                            KeyCode::Char('r') => {
-                                if !self.proposals.is_empty() {
-                                    self.current_proposal_index =
-                                        (self.current_proposal_index + 1) % self.proposals.len();
-                                }
-                            }
                             KeyCode::Char('e') => {
+                                // Edit selected proposal
                                 self.mode = AppMode::Revising;
                                 self.edit_buffer.clear();
+                            }
+                            KeyCode::Esc => {
+                                // Cancel and return to normal mode
+                                self.mode = AppMode::Normal;
+                                self.proposals.clear();
+                                self.current_proposal_index = 0;
                             }
                             _ => {}
                         },
