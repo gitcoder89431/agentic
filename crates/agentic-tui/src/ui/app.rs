@@ -618,7 +618,7 @@ impl App {
                 self.proposals = proposals;
                 self.current_proposal_index = 0;
                 self.mode = AppMode::Orchestrating;
-                self.agent_status = AgentStatus::Ready;
+                self.agent_status = AgentStatus::Orchestrating; // Keep Orchestrating status to show token count
             }
             AgentMessage::ProposalsGenerated(Err(_e)) => {
                 self.coaching_tip = (
@@ -922,7 +922,7 @@ impl App {
                             KeyCode::Up => {
                                 // Save synthesis (positive action)
                                 self.save_synthesis();
-                                self.mode = AppMode::Normal;
+                                self.mode = AppMode::Chat; // Go directly to chat for next query
                                 self.final_prompt.clear();
                                 self.proposals.clear();
                                 self.current_proposal_index = 0;
@@ -956,23 +956,32 @@ impl App {
                             KeyCode::Right => {
                                 // Scroll down through synthesis content with bounds checking
                                 if let Some(note) = &self.cloud_response {
-                                    // Calculate content height (number of lines when wrapped)
-                                    let content_width = 60; // Approximate usable width after borders
+                                    // Conservative approach: assume reasonable display size
+                                    // Most terminals will have synthesis width around 50-70 chars
+                                    let approx_usable_width = 50u16; // Conservative estimate
+                                    let approx_display_height = 10u16; // Conservative estimate (12 - 2 for borders)
+
+                                    // Calculate total lines needed when text wraps
                                     let lines: Vec<&str> = note.body_text.lines().collect();
-                                    let total_wrapped_lines = lines
+                                    let total_wrapped_lines: u16 = lines
                                         .iter()
                                         .map(|line| {
-                                            ((line.len() as f32 / content_width as f32).ceil()
-                                                as u16)
-                                                .max(1)
+                                            if line.is_empty() {
+                                                1 // Empty lines still take space
+                                            } else {
+                                                ((line.len() as f32 / approx_usable_width as f32)
+                                                    .ceil()
+                                                    as u16)
+                                                    .max(1)
+                                            }
                                         })
-                                        .sum::<u16>();
+                                        .sum();
 
-                                    let display_height = 10; // Approximate usable height (12 - 2 for borders)
+                                    // Only allow scrolling if content exceeds display height
                                     let max_scroll =
-                                        total_wrapped_lines.saturating_sub(display_height);
+                                        total_wrapped_lines.saturating_sub(approx_display_height);
 
-                                    if self.synthesis_scroll < max_scroll {
+                                    if max_scroll > 0 && self.synthesis_scroll < max_scroll {
                                         self.synthesis_scroll += 1;
                                     }
                                 }
