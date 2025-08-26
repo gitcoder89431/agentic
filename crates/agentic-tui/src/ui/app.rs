@@ -170,10 +170,11 @@ impl App {
         }
 
         // Header text
-        let header = Paragraph::new("Ruixen has a few lines of inquiry. Select the best one to pursue:")
-            .alignment(Alignment::Left)
-            .style(self.theme.ratatui_style(Element::Text))
-            .wrap(Wrap { trim: true });
+        let header =
+            Paragraph::new("Ruixen has a few lines of inquiry. Select the best one to pursue:")
+                .alignment(Alignment::Left)
+                .style(self.theme.ratatui_style(Element::Text))
+                .wrap(Wrap { trim: true });
 
         // Split area: header + proposals + footer
         let chunks = Layout::default()
@@ -196,13 +197,10 @@ impl App {
                 let is_selected = i == self.current_proposal_index;
                 let prefix = if is_selected { "> " } else { "  " };
                 let number = format!("{}. ", i + 1);
-                
+
                 // Split proposal into sentences (max 2) and wrap
-                let sentences: Vec<&str> = proposal
-                    .split(". ")
-                    .take(2)
-                    .collect();
-                
+                let sentences: Vec<&str> = proposal.split(". ").take(2).collect();
+
                 let proposal_text = if sentences.len() > 1 {
                     format!("{} {}", sentences[0], sentences.get(1).unwrap_or(&""))
                 } else {

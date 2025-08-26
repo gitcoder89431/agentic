@@ -57,12 +57,12 @@ pub async fn generate_proposals(
     model: &str,
 ) -> Result<Vec<String>, anyhow::Error> {
     let prompt = ORCHESTRATOR_PROMPT.replace("{query}", query);
-    
+
     // Debug: Write the prompt to a file so we can see what's being sent
     std::fs::write("/tmp/debug_prompt.txt", &prompt).ok();
-    
+
     let response_str = call_local_model(endpoint, model, &prompt).await?;
-    
+
     // Debug: Write the response to a file so we can see what came back
     std::fs::write("/tmp/debug_response.txt", &response_str).ok();
 
@@ -74,11 +74,18 @@ pub async fn generate_proposals(
             Err(e) => {
                 // Debug: Write the JSON we tried to parse
                 std::fs::write("/tmp/debug_json.txt", json_str).ok();
-                Err(anyhow::anyhow!("Failed to parse proposals JSON: {} | JSON: {}", e, json_str))
-            },
+                Err(anyhow::anyhow!(
+                    "Failed to parse proposals JSON: {} | JSON: {}",
+                    e,
+                    json_str
+                ))
+            }
         }
     } else {
-        Err(anyhow::anyhow!("No JSON object found in model response: {}", response_str))
+        Err(anyhow::anyhow!(
+            "No JSON object found in model response: {}",
+            response_str
+        ))
     }
 }
 
