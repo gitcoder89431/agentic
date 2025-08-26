@@ -1212,7 +1212,10 @@ impl App {
                 // Unknown command - could show help message or ignore
                 self.coaching_tip = (
                     "Unknown Command".to_string(),
-                    format!("Command '{}' not recognized. Try /settings or /quit", command),
+                    format!(
+                        "Command '{}' not recognized. Try /settings or /quit",
+                        command
+                    ),
                 );
                 self.mode = AppMode::CoachingTip;
             }
@@ -1232,10 +1235,13 @@ impl App {
     fn get_filtered_slash_commands(&self) -> Vec<(String, String)> {
         // Only 2 slash commands - About is main menu only
         let available_commands = vec![
-            ("/settings".to_string(), "Configure app settings".to_string()),
+            (
+                "/settings".to_string(),
+                "Configure app settings".to_string(),
+            ),
             ("/quit".to_string(), "Exit the application".to_string()),
         ];
-        
+
         if self.edit_buffer == "/" {
             // Show all commands when just "/" is typed
             available_commands
