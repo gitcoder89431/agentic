@@ -45,4 +45,4 @@ fi
 echo
 
 echo "=== Verification Complete ==="
-echo "Note: This script checks technical compliance. Please also review the audit_report.md and recommendations.md files for architectural and code quality improvements."
+echo "Please address any issues above to ensure compliance with project standards."

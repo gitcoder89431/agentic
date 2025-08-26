@@ -6,8 +6,8 @@ use super::{
     settings_modal::render_settings_modal,
 };
 use agentic_core::{
-    cloud,
-    models::{ModelValidator, OllamaModel, OpenRouterModel},
+    cloud::{self, CloudError},
+    models::{AtomicNote, ModelValidator, OllamaModel, OpenRouterModel},
     orchestrator,
     settings::{Settings, ValidationError},
     theme::{Element, Theme},
@@ -66,7 +66,7 @@ pub enum ValidationMessage {
 pub enum AgentMessage {
     ProposalsGenerated(Result<Vec<String>, anyhow::Error>),
     RevisedProposalGenerated(Result<String, anyhow::Error>),
-    CloudSynthesisComplete(Result<String, anyhow::Error>),
+    CloudSynthesisComplete(Result<AtomicNote, CloudError>),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -123,8 +123,9 @@ pub struct App {
     proposals: Vec<String>,
     current_proposal_index: usize,
     final_prompt: String,
-    cloud_response: String,
+    cloud_response: Option<AtomicNote>,
     synthesis_scroll: u16,
+    coaching_tip: (String, String),
 }
 
 impl App {
@@ -150,8 +151,9 @@ impl App {
             proposals: Vec::new(),
             current_proposal_index: 0,
             final_prompt: String::new(),
-            cloud_response: String::new(),
+            cloud_response: None,
             synthesis_scroll: 0,
+            coaching_tip: (String::new(), String::new()),
         }
     }
 
@@ -207,14 +209,12 @@ impl App {
                 let prefix = if is_selected { "> " } else { "  " };
                 let number = format!("{}. ", i + 1);
 
-                // Clean up the proposal text - remove template artifacts
+                // Clean up any remaining context artifacts for display
                 let proposal_text = proposal
-                    .replace("Context statement: ", "")
-                    .replace("Another context: ", "")
-                    .replace("Third context: ", "")
-                    .replace("Context statement - ", "")
-                    .replace("Another context - ", "")
-                    .replace("Third context - ", "");
+                    .replace("From a scientific perspective, ", "")
+                    .replace("As we explore ", "Exploring ")
+                    .trim()
+                    .to_string();
 
                 let style = if is_selected {
                     self.theme.ratatui_style(Element::Accent)
@@ -248,10 +248,12 @@ impl App {
     }
 
     fn render_coaching_tip_modal(&self, frame: &mut ratatui::Frame, area: Rect) {
-        use ratatui::{prelude::Alignment, text::Line, widgets::Paragraph};
+        use ratatui::{prelude::Alignment, widgets::Paragraph};
+
+        let (title, message) = &self.coaching_tip;
 
         let block = Block::default()
-            .title(" Coaching Tip ")
+            .title(format!(" {} ", title))
             .borders(Borders::ALL)
             .style(self.theme.ratatui_style(Element::Active));
 
@@ -267,19 +269,7 @@ impl App {
             ])
             .split(inner_area);
 
-        // Main coaching message with tips
-        let message_text = vec![
-            Line::from(""),
-            Line::from("Ruixen is having a tough time with this abstract query."),
-            Line::from(""),
-            Line::from(":: Smaller local models work best with clear and concrete questions."),
-            Line::from(""),
-            Line::from(":: Try a more direct question, add specific context, or break"),
-            Line::from("   the query down into smaller steps."),
-            Line::from(""),
-        ];
-
-        let message = Paragraph::new(message_text)
+        let message = Paragraph::new(message.as_str())
             .alignment(Alignment::Center)
             .style(self.theme.ratatui_style(Element::Text))
             .wrap(Wrap { trim: true });
@@ -467,13 +457,26 @@ impl App {
                 frame.render_widget(Clear, modal_area);
                 self.render_coaching_tip_modal(frame, modal_area);
             } else if self.mode == AppMode::Complete {
+                let content = if let Some(note) = &self.cloud_response {
+                    // Clean display - only show the synthesis content, hide system metadata
+                    Paragraph::new(note.body_text.as_str())
+                        .style(self.theme.ratatui_style(Element::Text))
+                } else {
+                    // This case should ideally not be reached if mode is Complete
+                    Paragraph::new("Waiting for synthesis...")
+                        .style(self.theme.ratatui_style(Element::Text))
+                };
+
                 let block = Block::default()
-                    .title("Synthesis Complete")
-                    .borders(Borders::ALL);
-                let paragraph = Paragraph::new(self.cloud_response.as_str())
+                    .title(" Synthesis Complete ")
+                    .borders(Borders::ALL)
+                    .style(self.theme.ratatui_style(Element::Active));
+
+                let paragraph = content
                     .block(block)
                     .wrap(Wrap { trim: true })
                     .scroll((self.synthesis_scroll, 0));
+
                 frame.render_widget(paragraph, app_chunks[1]);
             } else {
                 render_chat(
@@ -594,7 +597,10 @@ impl App {
                 self.agent_status = AgentStatus::Ready;
             }
             AgentMessage::ProposalsGenerated(Err(_e)) => {
-                // Show coaching tip instead of just failing silently
+                self.coaching_tip = (
+                    "Local Model Error".to_string(),
+                    "The local model failed to generate proposals. Check if it is running and configured correctly.".to_string(),
+                );
                 self.mode = AppMode::CoachingTip;
                 self.agent_status = AgentStatus::Ready;
             }
@@ -604,16 +610,34 @@ impl App {
                 self.agent_status = AgentStatus::Ready;
             }
             AgentMessage::RevisedProposalGenerated(Err(_e)) => {
-                // TODO: Set error state and display to user
+                self.coaching_tip = (
+                    "Local Model Error".to_string(),
+                    "The local model failed to revise the proposal. Check if it is running and configured correctly.".to_string(),
+                );
+                self.mode = AppMode::CoachingTip;
                 self.agent_status = AgentStatus::Ready;
             }
             AgentMessage::CloudSynthesisComplete(Ok(response)) => {
-                self.cloud_response = response;
+                self.cloud_response = Some(response);
                 self.mode = AppMode::Complete;
                 self.agent_status = AgentStatus::Complete;
             }
-            AgentMessage::CloudSynthesisComplete(Err(_e)) => {
-                // Show coaching tip for cloud API failures
+            AgentMessage::CloudSynthesisComplete(Err(e)) => {
+                let (title, message) = match e {
+                    CloudError::ApiKey => (
+                        "API Key Error".to_string(),
+                        "The cloud provider rejected the API key. It might have expired or been disabled. Please verify your key in the settings menu.".to_string(),
+                    ),
+                    CloudError::ParseError => (
+                        "Cloud Model Error".to_string(),
+                        "Ruixen was unable to parse the response from the cloud model. This can sometimes happen with very complex or ambiguous queries. Try rephrasing your prompt, or attempt the synthesis again.".to_string(),
+                    ),
+                    _ => (
+                        "Cloud API Error".to_string(),
+                        format!("An unexpected error occurred with the cloud provider: {}.", e),
+                    ),
+                };
+                self.coaching_tip = (title, message);
                 self.mode = AppMode::CoachingTip;
                 self.agent_status = AgentStatus::Ready;
             }
@@ -897,17 +921,38 @@ impl App {
                         },
                         AppMode::Complete => match key.code {
                             KeyCode::Up => {
-                                self.synthesis_scroll = self.synthesis_scroll.saturating_sub(1);
-                            }
-                            KeyCode::Down => {
-                                self.synthesis_scroll = self.synthesis_scroll.saturating_add(1);
-                            }
-                            KeyCode::Enter | KeyCode::Esc => {
+                                // Save synthesis (positive action)
+                                self.save_synthesis();
                                 self.mode = AppMode::Normal;
                                 self.final_prompt.clear();
                                 self.proposals.clear();
                                 self.current_proposal_index = 0;
-                                self.cloud_response.clear();
+                                self.cloud_response = None;
+                                self.synthesis_scroll = 0;
+                                self.agent_status = AgentStatus::Ready;
+                            }
+                            KeyCode::Down => {
+                                // Discard synthesis (negative action)
+                                self.mode = AppMode::Chat; // Start new query
+                                self.final_prompt.clear();
+                                self.proposals.clear();
+                                self.current_proposal_index = 0;
+                                self.cloud_response = None;
+                                self.synthesis_scroll = 0;
+                                self.agent_status = AgentStatus::Ready;
+                                self.edit_buffer.clear();
+                            }
+                            KeyCode::Left | KeyCode::Right => {
+                                // Keep horizontal scrolling for long content
+                                // Currently no horizontal scroll implemented
+                            }
+                            KeyCode::Enter | KeyCode::Esc => {
+                                // Fallback: return to normal without saving
+                                self.mode = AppMode::Normal;
+                                self.final_prompt.clear();
+                                self.proposals.clear();
+                                self.current_proposal_index = 0;
+                                self.cloud_response = None;
                                 self.synthesis_scroll = 0;
                                 self.agent_status = AgentStatus::Ready;
                             }
@@ -971,6 +1016,53 @@ impl App {
             });
         }
         self.edit_buffer.clear();
+    }
+
+    fn save_synthesis(&self) {
+        if let Some(note) = &self.cloud_response {
+            // Generate markdown content with v0.1.0 metadata structure
+            let timestamp = chrono::Utc::now().format("%Y-%m-%d_%H-%M-%S").to_string();
+            let filename = format!("synthesis_{}.md", timestamp);
+
+            // Get the selected proposal text
+            let proposal_text = if !self.proposals.is_empty()
+                && self.current_proposal_index < self.proposals.len()
+            {
+                &self.proposals[self.current_proposal_index]
+            } else {
+                "No proposal available"
+            };
+
+            // Use proposal text directly since the new prompt ensures proper format
+            let clean_proposal = proposal_text;
+
+            let markdown_content = format!(
+                "---\ndate: {}\nprovider: \"OPENROUTER\"\nmodel: \"{}\"\nquery: \"{}\"\nproposal: \"{}\"\ntags: [{}]\n---\n\n# {}\n\n{}\n",
+                chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC"),
+                if self.settings.cloud_model.is_empty() || self.settings.cloud_model == "[SELECT]" {
+                    "anthropic/claude-3.5-sonnet"
+                } else {
+                    &self.settings.cloud_model
+                },
+                self.final_prompt.replace("\"", "\\\""),
+                clean_proposal.replace("\"", "\\\""),
+                note.header_tags.iter().map(|tag| format!("\"{}\"", tag)).collect::<Vec<_>>().join(", "),
+                note.header_tags.join(" • "),
+                note.body_text
+            );
+
+            // Create Documents/ruixen directory if it doesn't exist
+            let home_dir = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+            let save_dir = format!("{}/Documents/ruixen", home_dir);
+            if std::fs::create_dir_all(&save_dir).is_err() {
+                // Silent fallback - don't crash the app
+                return;
+            }
+
+            let filepath = format!("{}/{}", save_dir, filename);
+            // Silent save - don't print debug logs that crash the TUI
+            let _ = std::fs::write(&filepath, markdown_content);
+        }
     }
 
     fn handle_cloud_synthesis(&mut self) {

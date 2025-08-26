@@ -1,18 +1,61 @@
+use crate::models::AtomicNote;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
+use thiserror::Error;
+
+#[derive(Debug, Error)]
+pub enum CloudError {
+    #[error("The cloud provider rejected the API key. It might have expired or been disabled.")]
+    ApiKey,
+
+    #[error("The cloud model returned a response that could not be understood.")]
+    ParseError,
+
+    #[error("The cloud provider returned an unexpected error: {status}: {text}")]
+    ApiError { status: u16, text: String },
+
+    #[error(transparent)]
+    RequestError(#[from] reqwest::Error),
+}
+
+const SYNTHESIZER_PROMPT: &str = r#"You are an expert-level AI Synthesizer. Your task is to answer the user's prompt by generating a concise, "atomic note" of knowledge.
+
+CRITICAL OUTPUT CONSTRAINTS:
+
+Header (Metadata): You MUST generate a set of 3-5 semantic keywords or tags that capture the absolute essence of the topic. These tags are for a knowledge graph.
+
+Body (Content): The main response MUST be a maximum of four (4) sentences. It must be a dense, self-contained summary of the most critical information.
+
+OUTPUT FORMAT (JSON):
+Your final output MUST be a single, valid JSON object with two keys: header_tags and body_text.
+
+{
+  "header_tags": ["keyword1", "keyword2", "keyword3"],
+  "body_text": "Your concise, 3-4 sentence summary goes here."
+}
+
+USER PROMPT:
+{prompt}
+"#;
 
 #[derive(Serialize)]
-struct OpenRouterRequest {
-    model: String,
-    messages: Vec<ChatMessage>,
-    max_tokens: u32,
+struct ResponseFormat {
+    r#type: String,
 }
 
 #[derive(Serialize)]
-struct ChatMessage {
+struct OpenRouterRequest<'a> {
+    model: String,
+    messages: Vec<ChatMessage<'a>>,
+    max_tokens: u32,
+    response_format: ResponseFormat,
+}
+
+#[derive(Serialize)]
+struct ChatMessage<'a> {
     role: String,
-    content: String,
+    content: &'a str,
 }
 
 #[derive(Deserialize)]
@@ -34,22 +77,21 @@ pub async fn call_cloud_model(
     api_key: &str,
     model: &str,
     prompt: &str,
-) -> Result<String, anyhow::Error> {
+) -> Result<AtomicNote, CloudError> {
     let client = Client::builder().timeout(Duration::from_secs(30)).build()?;
 
-    // Optimize prompt for concise responses
-    let optimized_prompt = format!(
-        "Please provide a concise, well-structured response to this inquiry. Keep it informative but focused:\n\n{}",
-        prompt
-    );
+    let synthesizer_prompt = SYNTHESIZER_PROMPT.replace("{prompt}", prompt);
 
     let request_body = OpenRouterRequest {
         model: model.to_string(),
         messages: vec![ChatMessage {
             role: "user".to_string(),
-            content: optimized_prompt,
+            content: &synthesizer_prompt,
         }],
-        max_tokens: 1024, // Reduced from 2048 for more concise responses
+        max_tokens: 1024,
+        response_format: ResponseFormat {
+            r#type: "json_object".to_string(),
+        },
     };
 
     let response = client
@@ -62,19 +104,29 @@ pub async fn call_cloud_model(
 
     if !response.status().is_success() {
         let status = response.status();
+        if status == 401 {
+            return Err(CloudError::ApiKey);
+        }
         let error_text = response.text().await.unwrap_or_default();
-        return Err(anyhow::anyhow!(
-            "OpenRouter API error {}: {}",
-            status,
-            error_text
-        ));
+        return Err(CloudError::ApiError {
+            status: status.as_u16(),
+            text: error_text,
+        });
     }
 
-    let openrouter_response: OpenRouterResponse = response.json().await?;
+    let openrouter_response: OpenRouterResponse = match response.json().await {
+        Ok(res) => res,
+        Err(_) => return Err(CloudError::ParseError),
+    };
 
-    if let Some(choice) = openrouter_response.choices.first() {
-        Ok(choice.message.content.clone())
-    } else {
-        Err(anyhow::anyhow!("No response choices from OpenRouter API"))
-    }
+    let message_content = openrouter_response
+        .choices
+        .first()
+        .map(|choice| &choice.message.content)
+        .ok_or(CloudError::ParseError)?;
+
+    let atomic_note: AtomicNote =
+        serde_json::from_str(message_content).map_err(|_| CloudError::ParseError)?;
+
+    Ok(atomic_note)
 }

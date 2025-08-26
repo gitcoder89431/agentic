@@ -20,6 +20,20 @@ pub fn render_footer(
     let inner_area = footer_block.inner(area);
 
     let content = match mode {
+        AppMode::Complete => {
+            // Save/Discard navigation for synthesis results
+            Line::from(vec![
+                Span::raw("[↑] "),
+                Span::styled("Save Synthesis", theme.ratatui_style(Element::Accent)),
+                Span::raw("  |  "),
+                Span::raw("[↓] "),
+                Span::styled(
+                    "Discard & New Query",
+                    theme.ratatui_style(Element::Inactive),
+                ),
+            ])
+            .alignment(Alignment::Center)
+        }
         AppMode::Chat => {
             // Chat input field with cursor
             let display_text = if chat_input.is_empty() {
