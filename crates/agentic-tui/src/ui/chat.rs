@@ -2,8 +2,15 @@ use crate::ui::app::{AgentStatus, AppMode};
 use agentic_core::theme::{Element, Theme};
 use ratatui::{
     prelude::{Alignment, Constraint, Direction, Frame, Layout, Rect},
-    widgets::{Block, Borders, Paragraph},
+    text::{Line, Span},
+    widgets::{Block, Borders, List, ListItem, Paragraph},
 };
+
+pub struct AutocompleteParams<'a> {
+    pub show: bool,
+    pub commands: &'a [(String, String)],
+    pub selected_index: usize,
+}
 
 const MAIN_LOGO: &str = r#"
     ╔═══════════════════════════════════════════════════════════════╗
@@ -63,6 +70,7 @@ pub fn render_chat(
     mode: AppMode,
     chat_input: &str,
     agent_status: AgentStatus,
+    autocomplete: AutocompleteParams,
 ) {
     let chat_block = Block::new()
         .borders(Borders::ALL)
@@ -95,6 +103,28 @@ pub fn render_chat(
         AppMode::Chat => {
             // Clean canvas when user is typing - completely empty
             // The spiral galaxy has disappeared, leaving pure focus space
+
+            // Show autocomplete dropdown if needed
+            if autocomplete.show && !autocomplete.commands.is_empty() {
+                let dropdown_height = (autocomplete.commands.len() as u16).clamp(1, 6) + 2; // Add 2 for borders
+                let dropdown_width = 50u16.min(inner_area.width - 4); // Make wider and ensure space for borders
+
+                // Position dropdown just above the footer bar (bottom of chat area)
+                let dropdown_area = Rect::new(
+                    inner_area.x + 2,
+                    inner_area.y + inner_area.height.saturating_sub(dropdown_height + 1),
+                    dropdown_width,
+                    dropdown_height,
+                );
+
+                render_autocomplete_dropdown(
+                    frame,
+                    dropdown_area,
+                    theme,
+                    autocomplete.commands,
+                    autocomplete.selected_index,
+                );
+            }
         }
         _ => {
             // Normal mode - show main logo with status-based message
@@ -160,4 +190,43 @@ pub fn render_chat(
             frame.render_widget(status_paragraph, vertical_chunks[3]);
         }
     }
+}
+
+fn render_autocomplete_dropdown(
+    frame: &mut Frame,
+    area: Rect,
+    theme: &Theme,
+    commands: &[(String, String)],
+    selected_index: usize,
+) {
+    let items: Vec<ListItem> = commands
+        .iter()
+        .enumerate()
+        .map(|(i, (cmd, desc))| {
+            let (cmd_style, desc_style) = if i == selected_index {
+                // Selected item: use accent color for command, normal for description
+                (theme.ratatui_style(Element::Accent), theme.text_style())
+            } else {
+                // Non-selected: normal text for both
+                (theme.text_style(), theme.ratatui_style(Element::Inactive))
+            };
+
+            let line = Line::from(vec![
+                Span::styled(cmd.clone(), cmd_style),
+                Span::raw(" - "),
+                Span::styled(desc.clone(), desc_style),
+            ]);
+
+            ListItem::new(line)
+        })
+        .collect();
+
+    let list = List::new(items).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .title("Commands")
+            .style(theme.ratatui_style(Element::Active)),
+    );
+
+    frame.render_widget(list, area);
 }
