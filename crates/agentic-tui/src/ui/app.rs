@@ -7,6 +7,7 @@ use super::{
 };
 use agentic_core::{
     models::{ModelValidator, OllamaModel, OpenRouterModel},
+    orchestrator,
     settings::{Settings, ValidationError},
     theme::{Element, Theme},
 };
@@ -14,7 +15,7 @@ use anyhow::Result;
 use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
 use ratatui::{
     prelude::{Constraint, CrosstermBackend, Direction, Layout, Rect, Terminal},
-    widgets::{Block, Borders, Clear},
+    widgets::{Block, Borders, Clear, Paragraph, Wrap},
 };
 use std::io::Stdout;
 use std::time::Duration;
@@ -29,6 +30,9 @@ pub enum AppMode {
     EditingApiKey,
     SelectingLocalModel,
     SelectingCloudModel,
+    Orchestrating,
+    Revising,
+    Complete,
     // TODO: Add About mode
 }
 
@@ -43,6 +47,7 @@ pub enum AgentStatus {
     ValidatingCloud,
     LocalEndpointError,
     CloudEndpointError,
+    Orchestrating,
 }
 
 #[derive(Debug)]
@@ -51,6 +56,12 @@ pub enum ValidationMessage {
     CloudValidationComplete(Result<(), ValidationError>),
     LocalModelsLoaded(Result<Vec<OllamaModel>, anyhow::Error>),
     CloudModelsLoaded(Result<Vec<OpenRouterModel>, anyhow::Error>),
+}
+
+#[derive(Debug)]
+pub enum AgentMessage {
+    ProposalsGenerated(Result<Vec<String>, anyhow::Error>),
+    RevisedProposalGenerated(Result<String, anyhow::Error>),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -96,17 +107,23 @@ pub struct App {
     agent_status: AgentStatus,
     settings_selection: SettingsSelection,
     validation_rx: Option<mpsc::UnboundedReceiver<ValidationMessage>>,
+    agent_rx: mpsc::UnboundedReceiver<AgentMessage>,
+    agent_tx: mpsc::UnboundedSender<AgentMessage>,
     edit_buffer: String,
     available_local_models: Vec<OllamaModel>,
     available_cloud_models: Vec<OpenRouterModel>,
     selected_model_index: usize,
     current_page: usize,
     models_per_page: usize,
+    proposals: Vec<String>,
+    current_proposal_index: usize,
+    final_prompt: String,
 }
 
 impl App {
     pub fn new(settings: Settings) -> Self {
         let theme = Theme::new(settings.theme);
+        let (agent_tx, agent_rx) = mpsc::unbounded_channel();
         Self {
             should_quit: false,
             theme,
@@ -115,13 +132,110 @@ impl App {
             agent_status: AgentStatus::NotReady,
             settings_selection: SettingsSelection::default(),
             validation_rx: None,
+            agent_rx,
+            agent_tx,
             edit_buffer: String::new(),
             available_local_models: Vec::new(),
             available_cloud_models: Vec::new(),
             selected_model_index: 0,
             current_page: 0,
             models_per_page: 10, // Show 10 models per page
+            proposals: Vec::new(),
+            current_proposal_index: 0,
+            final_prompt: String::new(),
         }
+    }
+
+    fn render_synthesize_modal(&self, frame: &mut ratatui::Frame, area: Rect) {
+        use ratatui::{
+            prelude::Alignment,
+            text::{Line, Span},
+            widgets::Paragraph,
+        };
+
+        let block = Block::default()
+            .title(" Synthesize Knowledge ")
+            .borders(Borders::ALL)
+            .style(self.theme.ratatui_style(Element::Active));
+
+        let inner_area = block.inner(area);
+        frame.render_widget(block, area);
+
+        if self.proposals.is_empty() {
+            let loading = Paragraph::new("Generating proposals...")
+                .alignment(Alignment::Center)
+                .style(self.theme.ratatui_style(Element::Info));
+            frame.render_widget(loading, inner_area);
+            return;
+        }
+
+        // Header text
+        let header =
+            Paragraph::new("Ruixen has a few lines of inquiry. Select the best one to pursue:")
+                .alignment(Alignment::Left)
+                .style(self.theme.ratatui_style(Element::Text))
+                .wrap(Wrap { trim: true });
+
+        // Split area: header + proposals + footer
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(3), // Header
+                Constraint::Min(6),    // Proposals (flexible)
+                Constraint::Length(3), // Footer
+            ])
+            .split(inner_area);
+
+        frame.render_widget(header, chunks[0]);
+
+        // Render proposals
+        let proposal_lines: Vec<Line> = self
+            .proposals
+            .iter()
+            .enumerate()
+            .flat_map(|(i, proposal)| {
+                let is_selected = i == self.current_proposal_index;
+                let prefix = if is_selected { "> " } else { "  " };
+                let number = format!("{}. ", i + 1);
+
+                // Split proposal into sentences (max 2) and wrap
+                let sentences: Vec<&str> = proposal.split(". ").take(2).collect();
+
+                let proposal_text = if sentences.len() > 1 {
+                    format!("{} {}", sentences[0], sentences.get(1).unwrap_or(&""))
+                } else {
+                    proposal.clone()
+                };
+
+                let style = if is_selected {
+                    self.theme.ratatui_style(Element::Accent)
+                } else {
+                    self.theme.ratatui_style(Element::Text)
+                };
+
+                vec![
+                    Line::from(vec![
+                        Span::styled(format!("{}{}", prefix, number), style),
+                        Span::styled(proposal_text, style),
+                    ]),
+                    Line::from(""), // Empty line between proposals
+                ]
+            })
+            .collect();
+
+        let proposals_paragraph = Paragraph::new(proposal_lines)
+            .style(self.theme.ratatui_style(Element::Text))
+            .wrap(Wrap { trim: true });
+
+        frame.render_widget(proposals_paragraph, chunks[1]);
+
+        // Footer with controls
+        let footer_text = "[Enter] Synthesize | [E]dit Selected | [ESC] Cancel";
+        let footer = Paragraph::new(footer_text)
+            .alignment(Alignment::Center)
+            .style(self.theme.ratatui_style(Element::Inactive));
+
+        frame.render_widget(footer, chunks[2]);
     }
 
     pub async fn run(&mut self, terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()> {
@@ -137,6 +251,15 @@ impl App {
             }
             for msg in messages {
                 self.handle_validation_message(msg);
+            }
+
+            // Handle agent messages from background tasks
+            let mut agent_messages = Vec::new();
+            while let Ok(msg) = self.agent_rx.try_recv() {
+                agent_messages.push(msg);
+            }
+            for msg in agent_messages {
+                self.handle_agent_message(msg);
             }
 
             // Handle keyboard events (non-blocking with timeout)
@@ -251,6 +374,29 @@ impl App {
                         &self.edit_buffer,
                     );
                 }
+            } else if self.mode == AppMode::Orchestrating {
+                // Render the Synthesize Knowledge modal
+                let size = frame.size();
+                let modal_width = (((size.width as f32) * 0.8).round() as u16)
+                    .clamp(50, 80)
+                    .min(size.width);
+                let modal_height = (((size.height as f32) * 0.6).round() as u16)
+                    .clamp(15, 25)
+                    .min(size.height);
+                let modal_area = Rect::new(
+                    (size.width.saturating_sub(modal_width)) / 2,
+                    (size.height.saturating_sub(modal_height)) / 2,
+                    modal_width,
+                    modal_height,
+                );
+                frame.render_widget(Clear, modal_area);
+                self.render_synthesize_modal(frame, modal_area);
+            } else if self.mode == AppMode::Complete {
+                let block = Block::default().title("Final Prompt").borders(Borders::ALL);
+                let paragraph = Paragraph::new(self.final_prompt.as_str())
+                    .block(block)
+                    .wrap(Wrap { trim: true });
+                frame.render_widget(paragraph, app_chunks[1]);
             } else {
                 render_chat(
                     frame,
@@ -357,6 +503,29 @@ impl App {
             ValidationMessage::CloudModelsLoaded(Err(_)) => {
                 // Handle cloud model loading error - maybe show a message or go back to settings
                 self.mode = AppMode::Settings;
+            }
+        }
+    }
+
+    fn handle_agent_message(&mut self, message: AgentMessage) {
+        match message {
+            AgentMessage::ProposalsGenerated(Ok(proposals)) => {
+                self.proposals = proposals;
+                self.current_proposal_index = 0;
+                self.mode = AppMode::Orchestrating;
+                self.agent_status = AgentStatus::Ready;
+            }
+            AgentMessage::ProposalsGenerated(Err(_e)) => {
+                self.agent_status = AgentStatus::Ready;
+            }
+            AgentMessage::RevisedProposalGenerated(Ok(proposal)) => {
+                self.proposals[self.current_proposal_index] = proposal;
+                self.mode = AppMode::Orchestrating;
+                self.agent_status = AgentStatus::Ready;
+            }
+            AgentMessage::RevisedProposalGenerated(Err(_e)) => {
+                // TODO: Set error state and display to user
+                self.agent_status = AgentStatus::Ready;
             }
         }
     }
@@ -587,6 +756,64 @@ impl App {
                             }
                             _ => {}
                         },
+                        AppMode::Orchestrating => match key.code {
+                            KeyCode::Up => {
+                                if self.current_proposal_index > 0 {
+                                    self.current_proposal_index -= 1;
+                                }
+                            }
+                            KeyCode::Down => {
+                                if self.current_proposal_index + 1 < self.proposals.len() {
+                                    self.current_proposal_index += 1;
+                                }
+                            }
+                            KeyCode::Enter => {
+                                // Synthesize - use selected proposal
+                                if let Some(proposal) =
+                                    self.proposals.get(self.current_proposal_index)
+                                {
+                                    self.final_prompt = proposal.clone();
+                                    self.mode = AppMode::Complete;
+                                }
+                            }
+                            KeyCode::Char('e') => {
+                                // Edit selected proposal
+                                self.mode = AppMode::Revising;
+                                self.edit_buffer.clear();
+                            }
+                            KeyCode::Esc => {
+                                // Cancel and return to normal mode
+                                self.mode = AppMode::Normal;
+                                self.proposals.clear();
+                                self.current_proposal_index = 0;
+                            }
+                            _ => {}
+                        },
+                        AppMode::Revising => match key.code {
+                            KeyCode::Enter => {
+                                self.handle_revision();
+                            }
+                            KeyCode::Esc => {
+                                self.mode = AppMode::Orchestrating;
+                                self.edit_buffer.clear();
+                            }
+                            KeyCode::Backspace => {
+                                self.edit_buffer.pop();
+                            }
+                            KeyCode::Char(c) => {
+                                self.edit_buffer.push(c);
+                            }
+                            _ => {}
+                        },
+                        AppMode::Complete => match key.code {
+                            KeyCode::Enter | KeyCode::Esc => {
+                                self.mode = AppMode::Normal;
+                                self.final_prompt.clear();
+                                self.proposals.clear();
+                                self.current_proposal_index = 0;
+                            }
+                            _ => {}
+                        },
                     }
                 }
             }
@@ -602,12 +829,41 @@ impl App {
             self.handle_slash_command(&message);
         } else {
             // Handle regular chat message
-            // TODO: Implement actual chat processing
-            // For now, just clear the input
-            println!("Chat message: {}", message);
+            self.agent_status = AgentStatus::Orchestrating;
+            let settings = self.settings.clone();
+            let tx = self.agent_tx.clone();
+            tokio::spawn(async move {
+                let result = orchestrator::generate_proposals(
+                    &message,
+                    &settings.endpoint,
+                    &settings.local_model,
+                )
+                .await;
+                let _ = tx.send(AgentMessage::ProposalsGenerated(result));
+            });
         }
 
         // Clear input after processing
+        self.edit_buffer.clear();
+    }
+
+    fn handle_revision(&mut self) {
+        let revision = self.edit_buffer.trim().to_string();
+        if let Some(current_proposal) = self.proposals.get(self.current_proposal_index).cloned() {
+            self.agent_status = AgentStatus::Orchestrating;
+            let settings = self.settings.clone();
+            let tx = self.agent_tx.clone();
+            tokio::spawn(async move {
+                let result = orchestrator::revise_proposal(
+                    &current_proposal,
+                    &revision,
+                    &settings.endpoint,
+                    &settings.local_model,
+                )
+                .await;
+                let _ = tx.send(AgentMessage::RevisedProposalGenerated(result));
+            });
+        }
         self.edit_buffer.clear();
     }
 

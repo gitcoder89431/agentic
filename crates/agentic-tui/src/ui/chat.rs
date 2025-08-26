@@ -117,30 +117,26 @@ pub fn render_chat(
 
             frame.render_widget(logo_paragraph, vertical_chunks[1]);
 
-            // Status-based message
+            // Status-based message - show one error at a time, prioritizing local > cloud > api key
             let (status_text, status_style) = match agent_status {
-                AgentStatus::Ready => (
-                    "Press [ENTER] to Start Ruixen",
-                    theme.ratatui_style(Element::Accent),
-                ),
                 AgentStatus::LocalEndpointError => (
-                    "⚠️  Local endpoint error - Check settings [S]",
-                    theme.ratatui_style(Element::Warning),
-                ),
-                AgentStatus::CloudEndpointError => (
-                    "⚠️  Cloud endpoint error - Check settings [S]",
+                    "Local not ready - see [S]ettings",
                     theme.ratatui_style(Element::Warning),
                 ),
                 AgentStatus::CheckLocalModel => (
-                    "⚠️  Local model not configured - Check settings [S]",
+                    "Local not ready - see [S]ettings",
+                    theme.ratatui_style(Element::Warning),
+                ),
+                AgentStatus::CloudEndpointError => (
+                    "Cloud not ready - see [S]ettings",
                     theme.ratatui_style(Element::Warning),
                 ),
                 AgentStatus::CheckCloudModel => (
-                    "⚠️  Cloud model not configured - Check settings [S]",
+                    "Cloud not ready - see [S]ettings",
                     theme.ratatui_style(Element::Warning),
                 ),
                 AgentStatus::CheckApiKey => (
-                    "⚠️  API key not configured - Check settings [S]",
+                    "API Key not ready - see [S]ettings",
                     theme.ratatui_style(Element::Warning),
                 ),
                 AgentStatus::ValidatingLocal => (
@@ -152,8 +148,8 @@ pub fn render_chat(
                     theme.ratatui_style(Element::Info),
                 ),
                 _ => (
-                    "Press [ENTER] when local and cloud models are ready",
-                    theme.ratatui_style(Element::Inactive),
+                    "Press [ENTER] to start Ruixen",
+                    theme.ratatui_style(Element::Accent),
                 ),
             };
 
