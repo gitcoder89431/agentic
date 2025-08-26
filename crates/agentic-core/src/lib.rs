@@ -10,6 +10,7 @@
 //! - `settings`: Application configuration management
 //! - `theme`: UI theming system
 
+pub mod cloud;
 pub mod models;
 pub mod orchestrator;
 pub mod settings;

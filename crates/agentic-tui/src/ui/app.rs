@@ -6,6 +6,7 @@ use super::{
     settings_modal::render_settings_modal,
 };
 use agentic_core::{
+    cloud,
     models::{ModelValidator, OllamaModel, OpenRouterModel},
     orchestrator,
     settings::{Settings, ValidationError},
@@ -33,6 +34,7 @@ pub enum AppMode {
     Orchestrating,
     Revising,
     Complete,
+    CoachingTip,
     // TODO: Add About mode
 }
 
@@ -48,6 +50,8 @@ pub enum AgentStatus {
     LocalEndpointError,
     CloudEndpointError,
     Orchestrating,
+    Searching,
+    Complete,
 }
 
 #[derive(Debug)]
@@ -62,6 +66,7 @@ pub enum ValidationMessage {
 pub enum AgentMessage {
     ProposalsGenerated(Result<Vec<String>, anyhow::Error>),
     RevisedProposalGenerated(Result<String, anyhow::Error>),
+    CloudSynthesisComplete(Result<String, anyhow::Error>),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -118,6 +123,8 @@ pub struct App {
     proposals: Vec<String>,
     current_proposal_index: usize,
     final_prompt: String,
+    cloud_response: String,
+    synthesis_scroll: u16,
 }
 
 impl App {
@@ -143,6 +150,8 @@ impl App {
             proposals: Vec::new(),
             current_proposal_index: 0,
             final_prompt: String::new(),
+            cloud_response: String::new(),
+            synthesis_scroll: 0,
         }
     }
 
@@ -198,14 +207,14 @@ impl App {
                 let prefix = if is_selected { "> " } else { "  " };
                 let number = format!("{}. ", i + 1);
 
-                // Split proposal into sentences (max 2) and wrap
-                let sentences: Vec<&str> = proposal.split(". ").take(2).collect();
-
-                let proposal_text = if sentences.len() > 1 {
-                    format!("{} {}", sentences[0], sentences.get(1).unwrap_or(&""))
-                } else {
-                    proposal.clone()
-                };
+                // Clean up the proposal text - remove template artifacts
+                let proposal_text = proposal
+                    .replace("Context statement: ", "")
+                    .replace("Another context: ", "")
+                    .replace("Third context: ", "")
+                    .replace("Context statement - ", "")
+                    .replace("Another context - ", "")
+                    .replace("Third context - ", "");
 
                 let style = if is_selected {
                     self.theme.ratatui_style(Element::Accent)
@@ -236,6 +245,55 @@ impl App {
             .style(self.theme.ratatui_style(Element::Inactive));
 
         frame.render_widget(footer, chunks[2]);
+    }
+
+    fn render_coaching_tip_modal(&self, frame: &mut ratatui::Frame, area: Rect) {
+        use ratatui::{prelude::Alignment, text::Line, widgets::Paragraph};
+
+        let block = Block::default()
+            .title(" Coaching Tip ")
+            .borders(Borders::ALL)
+            .style(self.theme.ratatui_style(Element::Active));
+
+        let inner_area = block.inner(area);
+        frame.render_widget(block, area);
+
+        // Split area: message + tips
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Min(5),    // Main message (flexible)
+                Constraint::Length(3), // Tips footer
+            ])
+            .split(inner_area);
+
+        // Main coaching message with tips
+        let message_text = vec![
+            Line::from(""),
+            Line::from("Ruixen is having a tough time with this abstract query."),
+            Line::from(""),
+            Line::from(":: Smaller local models work best with clear and concrete questions."),
+            Line::from(""),
+            Line::from(":: Try a more direct question, add specific context, or break"),
+            Line::from("   the query down into smaller steps."),
+            Line::from(""),
+        ];
+
+        let message = Paragraph::new(message_text)
+            .alignment(Alignment::Center)
+            .style(self.theme.ratatui_style(Element::Text))
+            .wrap(Wrap { trim: true });
+
+        frame.render_widget(message, chunks[0]);
+
+        // Navigation footer
+        let footer_text = "Press [ESC] to return.";
+        let footer = Paragraph::new(footer_text)
+            .alignment(Alignment::Center)
+            .style(self.theme.ratatui_style(Element::Inactive))
+            .wrap(Wrap { trim: true });
+
+        frame.render_widget(footer, chunks[1]);
     }
 
     pub async fn run(&mut self, terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()> {
@@ -391,11 +449,31 @@ impl App {
                 );
                 frame.render_widget(Clear, modal_area);
                 self.render_synthesize_modal(frame, modal_area);
+            } else if self.mode == AppMode::CoachingTip {
+                // Render the Coaching Tip modal
+                let size = frame.size();
+                let modal_width = (((size.width as f32) * 0.7).round() as u16)
+                    .clamp(50, 70)
+                    .min(size.width);
+                let modal_height = (((size.height as f32) * 0.4).round() as u16)
+                    .clamp(10, 15)
+                    .min(size.height);
+                let modal_area = Rect::new(
+                    (size.width.saturating_sub(modal_width)) / 2,
+                    (size.height.saturating_sub(modal_height)) / 2,
+                    modal_width,
+                    modal_height,
+                );
+                frame.render_widget(Clear, modal_area);
+                self.render_coaching_tip_modal(frame, modal_area);
             } else if self.mode == AppMode::Complete {
-                let block = Block::default().title("Final Prompt").borders(Borders::ALL);
-                let paragraph = Paragraph::new(self.final_prompt.as_str())
+                let block = Block::default()
+                    .title("Synthesis Complete")
+                    .borders(Borders::ALL);
+                let paragraph = Paragraph::new(self.cloud_response.as_str())
                     .block(block)
-                    .wrap(Wrap { trim: true });
+                    .wrap(Wrap { trim: true })
+                    .scroll((self.synthesis_scroll, 0));
                 frame.render_widget(paragraph, app_chunks[1]);
             } else {
                 render_chat(
@@ -516,6 +594,8 @@ impl App {
                 self.agent_status = AgentStatus::Ready;
             }
             AgentMessage::ProposalsGenerated(Err(_e)) => {
+                // Show coaching tip instead of just failing silently
+                self.mode = AppMode::CoachingTip;
                 self.agent_status = AgentStatus::Ready;
             }
             AgentMessage::RevisedProposalGenerated(Ok(proposal)) => {
@@ -525,6 +605,16 @@ impl App {
             }
             AgentMessage::RevisedProposalGenerated(Err(_e)) => {
                 // TODO: Set error state and display to user
+                self.agent_status = AgentStatus::Ready;
+            }
+            AgentMessage::CloudSynthesisComplete(Ok(response)) => {
+                self.cloud_response = response;
+                self.mode = AppMode::Complete;
+                self.agent_status = AgentStatus::Complete;
+            }
+            AgentMessage::CloudSynthesisComplete(Err(_e)) => {
+                // Show coaching tip for cloud API failures
+                self.mode = AppMode::CoachingTip;
                 self.agent_status = AgentStatus::Ready;
             }
         }
@@ -768,12 +858,12 @@ impl App {
                                 }
                             }
                             KeyCode::Enter => {
-                                // Synthesize - use selected proposal
+                                // Synthesize - send proposal to cloud for synthesis
                                 if let Some(proposal) =
                                     self.proposals.get(self.current_proposal_index)
                                 {
                                     self.final_prompt = proposal.clone();
-                                    self.mode = AppMode::Complete;
+                                    self.handle_cloud_synthesis();
                                 }
                             }
                             KeyCode::Char('e') => {
@@ -806,11 +896,27 @@ impl App {
                             _ => {}
                         },
                         AppMode::Complete => match key.code {
+                            KeyCode::Up => {
+                                self.synthesis_scroll = self.synthesis_scroll.saturating_sub(1);
+                            }
+                            KeyCode::Down => {
+                                self.synthesis_scroll = self.synthesis_scroll.saturating_add(1);
+                            }
                             KeyCode::Enter | KeyCode::Esc => {
                                 self.mode = AppMode::Normal;
                                 self.final_prompt.clear();
                                 self.proposals.clear();
                                 self.current_proposal_index = 0;
+                                self.cloud_response.clear();
+                                self.synthesis_scroll = 0;
+                                self.agent_status = AgentStatus::Ready;
+                            }
+                            _ => {}
+                        },
+                        AppMode::CoachingTip => match key.code {
+                            KeyCode::Enter | KeyCode::Esc => {
+                                // Return to chat mode to try again
+                                self.mode = AppMode::Chat;
                             }
                             _ => {}
                         },
@@ -865,6 +971,21 @@ impl App {
             });
         }
         self.edit_buffer.clear();
+    }
+
+    fn handle_cloud_synthesis(&mut self) {
+        // Set status to searching and trigger cloud API call
+        self.agent_status = AgentStatus::Searching;
+
+        let prompt = self.final_prompt.clone();
+        let api_key = self.settings.api_key.clone();
+        let model = self.settings.cloud_model.clone();
+        let tx = self.agent_tx.clone();
+
+        tokio::spawn(async move {
+            let result = cloud::call_cloud_model(&api_key, &model, &prompt).await;
+            let _ = tx.send(AgentMessage::CloudSynthesisComplete(result));
+        });
     }
 
     fn handle_slash_command(&mut self, command: &str) {

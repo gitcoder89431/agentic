@@ -103,6 +103,12 @@ fn build_smart_status_with_color(status: AgentStatus, settings: &Settings) -> (S
         AgentStatus::Orchestrating => {
             format!("Ruixen :: [ORCHESTRATING] :: {}", cloud_display)
         }
+        AgentStatus::Searching => {
+            format!("Ruixen :: ☁️🔍 :: [SEARCHING] :: {}", cloud_display)
+        }
+        AgentStatus::Complete => {
+            format!("Ruixen :: ✨ :: [SYNTHESIS COMPLETE] :: {}", cloud_display)
+        }
     };
 
     let color = match status {
@@ -117,6 +123,8 @@ fn build_smart_status_with_color(status: AgentStatus, settings: &Settings) -> (S
         }
         AgentStatus::ValidatingLocal | AgentStatus::ValidatingCloud => Color::Yellow, // Testing in progress
         AgentStatus::Orchestrating => Color::Cyan,
+        AgentStatus::Searching => Color::Blue, // Cloud synthesis in progress
+        AgentStatus::Complete => Color::Green, // Success!
         AgentStatus::LocalEndpointError | AgentStatus::CloudEndpointError => Color::Red, // Connection failed
         _ => Color::Red, // Other validation failed
     };

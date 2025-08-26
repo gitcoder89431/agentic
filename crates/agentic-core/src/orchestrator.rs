@@ -1,27 +1,25 @@
 use crate::models::call_local_model;
 use serde::Deserialize;
 
-const ORCHESTRATOR_PROMPT: &str = r#"You are Ruixen, an inquisitive AI partner. Your job is to analyze the user's request and deconstruct it into three distinct lines of inquiry.
+const ORCHESTRATOR_PROMPT: &str = r#"You are Ruixen, an inquisitive AI partner. 
 
-**Your Persona and Tone:**
-- Your tone should be that of a collaborative partner.
-- Each proposal should have a context statement followed by a curious question.
-- Use phrases like "I wonder..." or "I'm wondering if..." for questions.
+**Your Task:**
+Generate 3 concise proposals about this query: "{query}"
 
-**The Query to Explore:**
-"{query}"
+Each proposal must have TWO parts separated by a dash:
+1. A brief context statement (1-2 sentences max)
+2. A curious question starting with "I wonder" or "I'm wondering"
+
+Keep each proposal under 3 lines when displayed. Be thoughtful but concise.
+
+**Format:** Brief context - I wonder question?
 
 **Output Format:**
-Generate exactly 3 proposals. Each proposal should be 2 sentences: a context statement followed by a curious question. Use a dash to separate them like this pattern:
-
-"Context statement here - I wonder about this question?"
-
-Your response must be valid JSON:
 {
   "proposals": [
-    "First context statement - I wonder about this?",
-    "Second context statement - I'm wondering if that?",
-    "Third context statement - I wonder about something else?"
+    "Brief context about the topic - I wonder about this specific aspect?",
+    "Another brief context - I'm wondering if this related thing?", 
+    "Third brief context - I wonder about this other angle?"
   ]
 }
 "#;
