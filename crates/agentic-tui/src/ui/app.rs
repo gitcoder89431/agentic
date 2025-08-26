@@ -32,7 +32,6 @@ pub enum AppMode {
     SelectingLocalModel,
     SelectingCloudModel,
     Orchestrating,
-    Revising,
     Complete,
     CoachingTip,
     // TODO: Add About mode
@@ -65,7 +64,6 @@ pub enum ValidationMessage {
 #[derive(Debug)]
 pub enum AgentMessage {
     ProposalsGenerated(Result<Vec<String>, anyhow::Error>),
-    RevisedProposalGenerated(Result<String, anyhow::Error>),
     CloudSynthesisComplete(Result<AtomicNote, CloudError>),
 }
 
@@ -122,10 +120,13 @@ pub struct App {
     models_per_page: usize,
     proposals: Vec<String>,
     current_proposal_index: usize,
+    original_user_query: String, // Store the user's original query for metadata
     final_prompt: String,
     cloud_response: Option<AtomicNote>,
     synthesis_scroll: u16,
     coaching_tip: (String, String),
+    local_tokens_used: u32, // Token count for current local request
+    cloud_tokens_used: u32, // Token count for current cloud request
 }
 
 impl App {
@@ -150,10 +151,13 @@ impl App {
             models_per_page: 10, // Show 10 models per page
             proposals: Vec::new(),
             current_proposal_index: 0,
+            original_user_query: String::new(),
             final_prompt: String::new(),
             cloud_response: None,
             synthesis_scroll: 0,
             coaching_tip: (String::new(), String::new()),
+            local_tokens_used: 0,
+            cloud_tokens_used: 0,
         }
     }
 
@@ -238,8 +242,11 @@ impl App {
 
         frame.render_widget(proposals_paragraph, chunks[1]);
 
-        // Footer with controls
-        let footer_text = "[Enter] Synthesize | [E]dit Selected | [ESC] Cancel";
+        // Footer with controls - dynamic based on synthesis status
+        let footer_text = match self.agent_status {
+            AgentStatus::Searching => "⏳ Synthesizing... | [ESC] Cancel",
+            _ => "[Enter] Synthesize | [ESC] Cancel",
+        };
         let footer = Paragraph::new(footer_text)
             .alignment(Alignment::Center)
             .style(self.theme.ratatui_style(Element::Inactive));
@@ -342,6 +349,8 @@ impl App {
                 &self.theme,
                 self.agent_status,
                 &self.settings,
+                self.local_tokens_used,
+                self.cloud_tokens_used,
             );
             render_footer(
                 frame,
@@ -457,15 +466,30 @@ impl App {
                 frame.render_widget(Clear, modal_area);
                 self.render_coaching_tip_modal(frame, modal_area);
             } else if self.mode == AppMode::Complete {
+                // Center the synthesis content for better visual balance
                 let content = if let Some(note) = &self.cloud_response {
                     // Clean display - only show the synthesis content, hide system metadata
                     Paragraph::new(note.body_text.as_str())
                         .style(self.theme.ratatui_style(Element::Text))
+                        .alignment(ratatui::prelude::Alignment::Center)
                 } else {
                     // This case should ideally not be reached if mode is Complete
                     Paragraph::new("Waiting for synthesis...")
                         .style(self.theme.ratatui_style(Element::Text))
+                        .alignment(ratatui::prelude::Alignment::Center)
                 };
+
+                // Create a compact area for the synthesis (60% width, ~12 lines height, centered)
+                let main_area = app_chunks[1];
+                let synthesis_width = (main_area.width * 60 / 100).clamp(40, 80);
+                let synthesis_height = 12.min(main_area.height - 6);
+
+                let synthesis_area = Rect::new(
+                    main_area.x + (main_area.width.saturating_sub(synthesis_width)) / 2,
+                    main_area.y + (main_area.height.saturating_sub(synthesis_height)) / 2,
+                    synthesis_width,
+                    synthesis_height,
+                );
 
                 let block = Block::default()
                     .title(" Synthesis Complete ")
@@ -477,7 +501,7 @@ impl App {
                     .wrap(Wrap { trim: true })
                     .scroll((self.synthesis_scroll, 0));
 
-                frame.render_widget(paragraph, app_chunks[1]);
+                frame.render_widget(paragraph, synthesis_area);
             } else {
                 render_chat(
                     frame,
@@ -604,19 +628,6 @@ impl App {
                 self.mode = AppMode::CoachingTip;
                 self.agent_status = AgentStatus::Ready;
             }
-            AgentMessage::RevisedProposalGenerated(Ok(proposal)) => {
-                self.proposals[self.current_proposal_index] = proposal;
-                self.mode = AppMode::Orchestrating;
-                self.agent_status = AgentStatus::Ready;
-            }
-            AgentMessage::RevisedProposalGenerated(Err(_e)) => {
-                self.coaching_tip = (
-                    "Local Model Error".to_string(),
-                    "The local model failed to revise the proposal. Check if it is running and configured correctly.".to_string(),
-                );
-                self.mode = AppMode::CoachingTip;
-                self.agent_status = AgentStatus::Ready;
-            }
             AgentMessage::CloudSynthesisComplete(Ok(response)) => {
                 self.cloud_response = Some(response);
                 self.mode = AppMode::Complete;
@@ -650,6 +661,9 @@ impl App {
         if self.agent_status == AgentStatus::ValidatingCloud {
             self.agent_status = AgentStatus::Ready;
             self.start_agent_services();
+            // Automatically enter chat mode after successful validation
+            self.mode = AppMode::Chat;
+            self.edit_buffer.clear();
         }
     }
 
@@ -883,39 +897,24 @@ impl App {
                             }
                             KeyCode::Enter => {
                                 // Synthesize - send proposal to cloud for synthesis
-                                if let Some(proposal) =
-                                    self.proposals.get(self.current_proposal_index)
-                                {
-                                    self.final_prompt = proposal.clone();
-                                    self.handle_cloud_synthesis();
+                                // Rate limiting: only allow if not already processing
+                                if self.agent_status != AgentStatus::Searching {
+                                    if let Some(proposal) =
+                                        self.proposals.get(self.current_proposal_index)
+                                    {
+                                        self.final_prompt = proposal.clone();
+                                        self.handle_cloud_synthesis();
+                                    }
                                 }
-                            }
-                            KeyCode::Char('e') => {
-                                // Edit selected proposal
-                                self.mode = AppMode::Revising;
-                                self.edit_buffer.clear();
                             }
                             KeyCode::Esc => {
                                 // Cancel and return to normal mode
                                 self.mode = AppMode::Normal;
                                 self.proposals.clear();
                                 self.current_proposal_index = 0;
-                            }
-                            _ => {}
-                        },
-                        AppMode::Revising => match key.code {
-                            KeyCode::Enter => {
-                                self.handle_revision();
-                            }
-                            KeyCode::Esc => {
-                                self.mode = AppMode::Orchestrating;
-                                self.edit_buffer.clear();
-                            }
-                            KeyCode::Backspace => {
-                                self.edit_buffer.pop();
-                            }
-                            KeyCode::Char(c) => {
-                                self.edit_buffer.push(c);
+                                self.original_user_query.clear();
+                                self.local_tokens_used = 0;
+                                self.cloud_tokens_used = 0;
                             }
                             _ => {}
                         },
@@ -927,9 +926,12 @@ impl App {
                                 self.final_prompt.clear();
                                 self.proposals.clear();
                                 self.current_proposal_index = 0;
+                                self.original_user_query.clear();
                                 self.cloud_response = None;
                                 self.synthesis_scroll = 0;
                                 self.agent_status = AgentStatus::Ready;
+                                self.local_tokens_used = 0;
+                                self.cloud_tokens_used = 0;
                             }
                             KeyCode::Down => {
                                 // Discard synthesis (negative action)
@@ -937,14 +939,43 @@ impl App {
                                 self.final_prompt.clear();
                                 self.proposals.clear();
                                 self.current_proposal_index = 0;
+                                self.original_user_query.clear();
                                 self.cloud_response = None;
                                 self.synthesis_scroll = 0;
                                 self.agent_status = AgentStatus::Ready;
                                 self.edit_buffer.clear();
+                                self.local_tokens_used = 0;
+                                self.cloud_tokens_used = 0;
                             }
-                            KeyCode::Left | KeyCode::Right => {
-                                // Keep horizontal scrolling for long content
-                                // Currently no horizontal scroll implemented
+                            KeyCode::Left => {
+                                // Scroll up through synthesis content
+                                if self.synthesis_scroll > 0 {
+                                    self.synthesis_scroll -= 1;
+                                }
+                            }
+                            KeyCode::Right => {
+                                // Scroll down through synthesis content with bounds checking
+                                if let Some(note) = &self.cloud_response {
+                                    // Calculate content height (number of lines when wrapped)
+                                    let content_width = 60; // Approximate usable width after borders
+                                    let lines: Vec<&str> = note.body_text.lines().collect();
+                                    let total_wrapped_lines = lines
+                                        .iter()
+                                        .map(|line| {
+                                            ((line.len() as f32 / content_width as f32).ceil()
+                                                as u16)
+                                                .max(1)
+                                        })
+                                        .sum::<u16>();
+
+                                    let display_height = 10; // Approximate usable height (12 - 2 for borders)
+                                    let max_scroll =
+                                        total_wrapped_lines.saturating_sub(display_height);
+
+                                    if self.synthesis_scroll < max_scroll {
+                                        self.synthesis_scroll += 1;
+                                    }
+                                }
                             }
                             KeyCode::Enter | KeyCode::Esc => {
                                 // Fallback: return to normal without saving
@@ -980,6 +1011,13 @@ impl App {
             self.handle_slash_command(&message);
         } else {
             // Handle regular chat message
+            // Store the original user query for metadata
+            self.original_user_query = message.clone();
+
+            // Estimate tokens for local request (rough: chars/4 + prompt overhead)
+            self.local_tokens_used = (message.len() / 4) as u32 + 500; // ~500 tokens for prompt template
+            self.cloud_tokens_used = 0; // Reset cloud tokens for new session
+
             self.agent_status = AgentStatus::Orchestrating;
             let settings = self.settings.clone();
             let tx = self.agent_tx.clone();
@@ -998,31 +1036,18 @@ impl App {
         self.edit_buffer.clear();
     }
 
-    fn handle_revision(&mut self) {
-        let revision = self.edit_buffer.trim().to_string();
-        if let Some(current_proposal) = self.proposals.get(self.current_proposal_index).cloned() {
-            self.agent_status = AgentStatus::Orchestrating;
-            let settings = self.settings.clone();
-            let tx = self.agent_tx.clone();
-            tokio::spawn(async move {
-                let result = orchestrator::revise_proposal(
-                    &current_proposal,
-                    &revision,
-                    &settings.endpoint,
-                    &settings.local_model,
-                )
-                .await;
-                let _ = tx.send(AgentMessage::RevisedProposalGenerated(result));
-            });
-        }
-        self.edit_buffer.clear();
-    }
-
     fn save_synthesis(&self) {
         if let Some(note) = &self.cloud_response {
-            // Generate markdown content with v0.1.0 metadata structure
-            let timestamp = chrono::Utc::now().format("%Y-%m-%d_%H-%M-%S").to_string();
-            let filename = format!("synthesis_{}.md", timestamp);
+            // Generate meaningful filename from query and metadata
+            let timestamp = chrono::Utc::now();
+            let date_part = timestamp.format("%Y-%m-%d").to_string();
+
+            // Extract keywords from original user query for filename
+            let keywords =
+                self.extract_filename_keywords(&self.original_user_query, &note.header_tags);
+            let time_suffix = timestamp.format("-%H%M").to_string(); // Add time for uniqueness
+
+            let filename = format!("{}-{}{}.md", date_part, keywords, time_suffix);
 
             // Get the selected proposal text
             let proposal_text = if !self.proposals.is_empty()
@@ -1036,17 +1061,43 @@ impl App {
             // Use proposal text directly since the new prompt ensures proper format
             let clean_proposal = proposal_text;
 
+            // Get model names for usage metadata
+            let local_model = if self.settings.local_model.is_empty()
+                || self.settings.local_model == "[SELECT]"
+            {
+                "unknown"
+            } else {
+                &self.settings.local_model
+            };
+
+            let cloud_model = if self.settings.cloud_model.is_empty()
+                || self.settings.cloud_model == "[SELECT]"
+            {
+                "anthropic/claude-3.5-sonnet"
+            } else {
+                &self.settings.cloud_model
+            };
+
+            // Estimate token breakdown (rough estimates)
+            let local_prompt_tokens = (self.original_user_query.len() / 4) as u32 + 200; // Query + template
+            let local_completion_tokens =
+                self.local_tokens_used.saturating_sub(local_prompt_tokens);
+            let cloud_prompt_tokens = (self.final_prompt.len() / 4) as u32 + 150; // Proposal + synthesis template
+            let cloud_completion_tokens =
+                self.cloud_tokens_used.saturating_sub(cloud_prompt_tokens);
+
             let markdown_content = format!(
-                "---\ndate: {}\nprovider: \"OPENROUTER\"\nmodel: \"{}\"\nquery: \"{}\"\nproposal: \"{}\"\ntags: [{}]\n---\n\n# {}\n\n{}\n",
+                "---\ndate: {}\nprovider: \"OPENROUTER\"\nquery: \"{}\"\nproposal: \"{}\"\ntags: [{}]\n\nusage:\n  local_model: \"{}\"\n  local_prompt_tokens: {}\n  local_completion_tokens: {}\n  cloud_model: \"{}\"\n  cloud_prompt_tokens: {}\n  cloud_completion_tokens: {}\n---\n\n# {}\n\n{}\n",
                 chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC"),
-                if self.settings.cloud_model.is_empty() || self.settings.cloud_model == "[SELECT]" {
-                    "anthropic/claude-3.5-sonnet"
-                } else {
-                    &self.settings.cloud_model
-                },
-                self.final_prompt.replace("\"", "\\\""),
+                self.original_user_query.replace("\"", "\\\""),
                 clean_proposal.replace("\"", "\\\""),
                 note.header_tags.iter().map(|tag| format!("\"{}\"", tag)).collect::<Vec<_>>().join(", "),
+                local_model,
+                local_prompt_tokens,
+                local_completion_tokens,
+                cloud_model,
+                cloud_prompt_tokens,
+                cloud_completion_tokens,
                 note.header_tags.join(" • "),
                 note.body_text
             );
@@ -1068,6 +1119,9 @@ impl App {
     fn handle_cloud_synthesis(&mut self) {
         // Set status to searching and trigger cloud API call
         self.agent_status = AgentStatus::Searching;
+
+        // Estimate tokens for cloud request (prompt + synthesis template)
+        self.cloud_tokens_used = (self.final_prompt.len() / 4) as u32 + 300; // ~300 tokens for synthesis template
 
         let prompt = self.final_prompt.clone();
         let api_key = self.settings.api_key.clone();
@@ -1228,5 +1282,55 @@ impl App {
         // Ensure the current selection is visible on the current page
         let target_page = self.selected_model_index / self.models_per_page;
         self.current_page = target_page;
+    }
+
+    fn extract_filename_keywords(&self, query: &str, meta_tags: &[String]) -> String {
+        // Common words to filter out
+        let stop_words = [
+            "the", "a", "an", "and", "or", "but", "in", "on", "at", "to", "for", "of", "with",
+            "by", "is", "are", "was", "were", "be", "been", "have", "has", "had", "do", "does",
+            "did", "will", "would", "could", "should", "can", "what", "where", "when", "why",
+            "how", "who", "which", "that", "this", "these", "those", "i", "you", "he", "she", "it",
+            "we", "they", "me", "him", "her", "us", "them", "my", "your", "his", "her", "its",
+            "our", "their",
+        ];
+
+        // Extract meaningful words from query
+        let query_words: Vec<String> = query
+            .to_lowercase()
+            .split_whitespace()
+            .filter_map(|word| {
+                // Clean up punctuation
+                let clean_word = word.trim_matches(|c: char| !c.is_alphanumeric());
+
+                // Filter out stop words and short words
+                if clean_word.len() >= 3 && !stop_words.contains(&clean_word) {
+                    Some(clean_word.to_string())
+                } else {
+                    None
+                }
+            })
+            .take(3) // Limit to 3 keywords from query
+            .collect();
+
+        // If we got good keywords from query, use them
+        if query_words.len() >= 2 {
+            query_words.join("-")
+        } else {
+            // Fallback to first meta tag if query didn't provide enough keywords
+            if let Some(first_tag) = meta_tags.first() {
+                first_tag
+                    .to_lowercase()
+                    .replace(' ', "-")
+                    .chars()
+                    .filter(|c| c.is_alphanumeric() || *c == '-')
+                    .collect::<String>()
+                    .trim_matches('-')
+                    .to_string()
+            } else {
+                // Final fallback
+                "synthesis".to_string()
+            }
+        }
     }
 }

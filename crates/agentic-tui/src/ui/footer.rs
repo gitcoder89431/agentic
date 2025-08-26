@@ -21,16 +21,16 @@ pub fn render_footer(
 
     let content = match mode {
         AppMode::Complete => {
-            // Save/Discard navigation for synthesis results
+            // Save/Discard navigation for synthesis results with scroll controls
             Line::from(vec![
                 Span::raw("[↑] "),
-                Span::styled("Save Synthesis", theme.ratatui_style(Element::Accent)),
+                Span::styled("Save", theme.ratatui_style(Element::Accent)),
                 Span::raw("  |  "),
                 Span::raw("[↓] "),
-                Span::styled(
-                    "Discard & New Query",
-                    theme.ratatui_style(Element::Inactive),
-                ),
+                Span::styled("Discard", theme.ratatui_style(Element::Inactive)),
+                Span::raw("  |  "),
+                Span::raw("[←→] "),
+                Span::styled("Scroll", theme.ratatui_style(Element::Text)),
             ])
             .alignment(Alignment::Center)
         }
