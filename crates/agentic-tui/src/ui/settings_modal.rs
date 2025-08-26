@@ -141,7 +141,7 @@ pub fn render_settings_modal(
     let action_text = match mode {
         AppMode::EditingApiKey => "[ENTER] Save | [CTRL+V] Paste | [ESC] Cancel",
         AppMode::EditingEndpoint => "[ENTER] Save | [ESC] Cancel",
-        _ => "[ENTER] Edit | [↑↓] Navigate | [S]ave | [R]eturn",
+        _ => "[↑↓] Navigate | [S]ave changes | [ESC] Return",
     };
     let action_style = if selection == SettingsSelection::Save {
         theme.highlight_style()

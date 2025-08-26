@@ -731,7 +731,7 @@ impl App {
                             _ => {}
                         },
                         AppMode::Settings => match key.code {
-                            KeyCode::Char('r') => self.mode = AppMode::Normal,
+                            KeyCode::Esc => self.mode = AppMode::Normal,
                             KeyCode::Char('s') => {
                                 if let Err(e) = self.settings.save() {
                                     eprintln!("Warning: Failed to save settings: {}", e);
