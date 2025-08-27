@@ -67,6 +67,43 @@ pub enum AgentMessage {
     CloudSynthesisComplete(Result<AtomicNote, CloudError>),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RuixenState {
+    Resting,     // 😴💤🌙 - Waiting for input, peaceful state
+    Curious,     // 🤨🧠💭 - Analyzing user query, thinking
+    Working,     // 😤💦📝 - Processing complex query, working hard
+    Searching,   // 🔍☁️⚡ - Cloud processing, searching for answers
+    Celebrating, // 💎🚀🎯 - Successful synthesis, celebration
+    Confused,    // 😅🤦‍♂️📝 - Error state, but learning from it
+}
+
+impl RuixenState {
+    pub fn emoji_expression(&self) -> &'static str {
+        match self {
+            RuixenState::Resting => "😴 💤 🌙",
+            RuixenState::Curious => "🤨 🧠 💭",
+            RuixenState::Working => "😤 💦 📝",
+            RuixenState::Searching => "🔍 ☁️ ⚡",
+            RuixenState::Celebrating => "💎 🚀 🎯",
+            RuixenState::Confused => "😅 🤦‍♂️ 📝",
+        }
+    }
+
+    pub fn from_agent_status(status: AgentStatus) -> Self {
+        match status {
+            AgentStatus::Ready => RuixenState::Resting,
+            AgentStatus::Orchestrating => RuixenState::Curious,
+            AgentStatus::Searching => RuixenState::Searching,
+            AgentStatus::Complete => RuixenState::Celebrating,
+            AgentStatus::LocalEndpointError | AgentStatus::CloudEndpointError => {
+                RuixenState::Confused
+            }
+            AgentStatus::ValidatingLocal | AgentStatus::ValidatingCloud => RuixenState::Working,
+            _ => RuixenState::Resting,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SettingsSelection {
     #[default]
@@ -124,11 +161,14 @@ pub struct App {
     final_prompt: String,
     cloud_response: Option<AtomicNote>,
     synthesis_scroll: u16,
+    about_scroll: u16,
     coaching_tip: (String, String),
     local_tokens_used: u32, // Token count for current local request
     cloud_tokens_used: u32, // Token count for current cloud request
     show_autocomplete: bool,
     autocomplete_index: usize,
+    ruixen_reaction_state: Option<RuixenState>, // Temporary reaction state
+    reaction_timer: Option<std::time::Instant>, // When reaction started,
 }
 
 impl App {
@@ -157,11 +197,82 @@ impl App {
             final_prompt: String::new(),
             cloud_response: None,
             synthesis_scroll: 0,
+            about_scroll: 0,
             coaching_tip: (String::new(), String::new()),
             local_tokens_used: 0,
             cloud_tokens_used: 0,
             show_autocomplete: false,
             autocomplete_index: 0,
+            ruixen_reaction_state: None,
+            reaction_timer: None,
+        }
+    }
+
+    fn get_current_ruixen_emoji(&self) -> &'static str {
+        // Check if we have a temporary reaction that should expire
+        if let (Some(reaction), Some(timer)) = (&self.ruixen_reaction_state, &self.reaction_timer) {
+            if timer.elapsed() <= std::time::Duration::from_millis(2000) {
+                // 2 second reactions
+                return reaction.emoji_expression();
+            }
+        }
+
+        // Default to agent status-based emoji
+        RuixenState::from_agent_status(self.agent_status).emoji_expression()
+    }
+
+    fn set_ruixen_reaction(&mut self, reaction: RuixenState) {
+        self.ruixen_reaction_state = Some(reaction);
+        self.reaction_timer = Some(std::time::Instant::now());
+    }
+
+    fn cleanup_expired_reactions(&mut self) {
+        if let (Some(_), Some(timer)) = (&self.ruixen_reaction_state, &self.reaction_timer) {
+            if timer.elapsed() > std::time::Duration::from_millis(2000) {
+                self.ruixen_reaction_state = None;
+                self.reaction_timer = None;
+            }
+        }
+    }
+
+    fn analyze_query_complexity(&self, query: &str) -> RuixenState {
+        let word_count = query.split_whitespace().count();
+        let has_questions = query.contains('?');
+        let has_complex_words = query.split_whitespace().any(|word| word.len() > 10);
+        let is_philosophical = query.to_lowercase().contains("why")
+            || query.to_lowercase().contains("how")
+            || query.to_lowercase().contains("what if");
+
+        // Determine Ruixen's initial reaction based on query complexity
+        if word_count < 5 && !has_questions {
+            RuixenState::Curious // 🤨🧠💭 - Simple query, just curious
+        } else if (word_count > 15) || has_complex_words || is_philosophical {
+            RuixenState::Working // 😤💦📝 - Complex query, need to work hard
+        } else {
+            RuixenState::Curious // 🤨🧠💭 - Standard query, thinking
+        }
+    }
+
+    fn analyze_synthesis_quality(&self, response: &AtomicNote) -> RuixenState {
+        let body_length = response.body_text.len();
+        let has_insights = response.body_text.to_lowercase().contains("insight")
+            || response.body_text.to_lowercase().contains("reveals")
+            || response.body_text.to_lowercase().contains("understanding");
+        let has_technical_terms = response
+            .body_text
+            .split_whitespace()
+            .any(|word| word.len() > 12 || word.contains("ology") || word.contains("tion"));
+        let tag_count = response.header_tags.len();
+
+        // Determine Ruixen's reaction to the synthesis quality
+        if body_length > 800 && has_insights && tag_count > 3 {
+            RuixenState::Celebrating // 💎🚀🎯 - Excellent synthesis, celebration!
+        } else if body_length > 400 && (has_insights || has_technical_terms) {
+            RuixenState::Resting // 😴💤🌙 - Good synthesis, satisfied
+        } else if body_length < 200 {
+            RuixenState::Confused // 😅🤦‍♂️📝 - Short response, maybe didn't work well
+        } else {
+            RuixenState::Curious // 🤨🧠💭 - Decent response, still thinking
         }
     }
 
@@ -173,7 +284,7 @@ impl App {
         };
 
         let block = Block::default()
-            .title(" Synthesize Knowledge ")
+            .title(format!(" {} ", self.get_current_ruixen_emoji()))
             .borders(Borders::ALL)
             .style(self.theme.ratatui_style(Element::Active));
 
@@ -271,34 +382,45 @@ impl App {
         let inner_area = block.inner(area);
         frame.render_widget(block, area);
 
-        // Split area: message + tips
+        // Split area: message + navigation footer
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
                 Constraint::Min(5),    // Main message (flexible)
-                Constraint::Length(3), // Tips footer
+                Constraint::Length(1), // Navigation footer - single line like settings
             ])
             .split(inner_area);
 
-        let message = Paragraph::new(message.as_str())
-            .alignment(Alignment::Center)
+        let mut message = Paragraph::new(message.as_str())
+            .alignment(Alignment::Left) // Use Left alignment for better scrolling readability
             .style(self.theme.ratatui_style(Element::Text))
             .wrap(Wrap { trim: true });
 
+        // Apply scrolling only for About pages
+        if title.contains("About RuixenOS") {
+            message = message.scroll((self.about_scroll, 0));
+        }
+
         frame.render_widget(message, chunks[0]);
 
-        // Navigation footer
-        let footer_text = "Press [ESC] to return.";
+        // Navigation footer - show scroll controls for About page
+        let footer_text = if title.contains("About RuixenOS") {
+            "[←] [→] Scroll | [ESC] Return"
+        } else {
+            "Press [ESC] to return."
+        };
         let footer = Paragraph::new(footer_text)
             .alignment(Alignment::Center)
-            .style(self.theme.ratatui_style(Element::Inactive))
-            .wrap(Wrap { trim: true });
+            .style(self.theme.ratatui_style(Element::Inactive));
 
         frame.render_widget(footer, chunks[1]);
     }
 
     pub async fn run(&mut self, terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()> {
         while !self.should_quit {
+            // Clean up expired reactions
+            self.cleanup_expired_reactions();
+
             self.draw(terminal)?;
 
             // Handle validation messages from background tasks
@@ -496,7 +618,7 @@ impl App {
                 );
 
                 let block = Block::default()
-                    .title(" Synthesis Complete ")
+                    .title(format!(" {} ", self.get_current_ruixen_emoji()))
                     .borders(Borders::ALL)
                     .style(self.theme.ratatui_style(Element::Active));
 
@@ -519,6 +641,7 @@ impl App {
                         commands: &self.get_filtered_slash_commands(),
                         selected_index: self.autocomplete_index,
                     },
+                    self.get_current_ruixen_emoji(),
                 );
             }
         })?;
@@ -638,6 +761,10 @@ impl App {
                 self.agent_status = AgentStatus::Ready;
             }
             AgentMessage::CloudSynthesisComplete(Ok(response)) => {
+                // Analyze the synthesis quality and show reaction
+                let reaction = self.analyze_synthesis_quality(&response);
+                self.set_ruixen_reaction(reaction);
+
                 self.cloud_response = Some(response);
                 self.mode = AppMode::Complete;
                 self.agent_status = AgentStatus::Complete;
@@ -724,7 +851,7 @@ impl App {
                                 // Show About modal - same as /about command
                                 self.coaching_tip = (
                                     "About RuixenOS v0.1.0".to_string(),
-                                    "🎯 The Curiosity Machine\nTransforming queries into thoughtful Ruixen inquiries since 2025.\nBuilt with Rust, ratatui, and endless wonder.".to_string(),
+                                    "🎯 The Curiosity Machine\nTransforming queries into thoughtful Ruixen inquiries since 2025.\nBuilt with Rust, ratatui, and endless wonder.\n\n💝 Builder's Note:\nThis app was crafted with constitutional Rust patterns, following the RuixenOS workspace architecture. Every emoji expression, every token counted, every error handled gracefully. It's been an absolute joy building something that turns simple questions into profound explorations. The curiosity machine doesn't just process queries - it awakens wonder.\n\n🤝 Co-built with love by humans and AI agents working in harmony.".to_string(),
                                 );
                                 self.mode = AppMode::CoachingTip;
                             }
@@ -1050,7 +1177,48 @@ impl App {
                             _ => {}
                         },
                         AppMode::CoachingTip => match key.code {
+                            KeyCode::Left => {
+                                // Scroll up through About content (only for About page)
+                                if self.coaching_tip.0.contains("About RuixenOS")
+                                    && self.about_scroll > 0
+                                {
+                                    self.about_scroll -= 1;
+                                }
+                            }
+                            KeyCode::Right => {
+                                // Scroll down through About content (only for About page)
+                                if self.coaching_tip.0.contains("About RuixenOS") {
+                                    // Calculate max scroll based on content length
+                                    let content = &self.coaching_tip.1;
+                                    let approx_usable_width = 50u16; // Conservative estimate for modal width
+                                    let approx_display_height = 8u16; // Conservative estimate (modal height - borders)
+
+                                    let lines: Vec<&str> = content.lines().collect();
+                                    let total_wrapped_lines: u16 = lines
+                                        .iter()
+                                        .map(|line| {
+                                            if line.is_empty() {
+                                                1 // Empty lines still take space
+                                            } else {
+                                                ((line.len() as f32 / approx_usable_width as f32)
+                                                    .ceil()
+                                                    as u16)
+                                                    .max(1)
+                                            }
+                                        })
+                                        .sum();
+
+                                    let max_scroll =
+                                        total_wrapped_lines.saturating_sub(approx_display_height);
+
+                                    if max_scroll > 0 && self.about_scroll < max_scroll {
+                                        self.about_scroll += 1;
+                                    }
+                                }
+                            }
                             KeyCode::Enter | KeyCode::Esc => {
+                                // Reset scroll when closing and return to appropriate mode
+                                self.about_scroll = 0;
                                 // About modal should return to main menu, errors return to chat
                                 if self.coaching_tip.0.contains("About RuixenOS") {
                                     self.mode = AppMode::Normal;
@@ -1078,6 +1246,10 @@ impl App {
             // Handle regular chat message
             // Store the original user query for metadata
             self.original_user_query = message.clone();
+
+            // Analyze query complexity and show brief reaction
+            let reaction = self.analyze_query_complexity(&message);
+            self.set_ruixen_reaction(reaction);
 
             // Estimate tokens for local request (rough: chars/4 + prompt overhead)
             self.local_tokens_used = (message.len() / 4) as u32 + 500; // ~500 tokens for prompt template

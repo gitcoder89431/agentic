@@ -63,6 +63,7 @@ const GAP_HEIGHT: u16 = 1;
 const MAIN_TOTAL_HEIGHT: u16 = MAIN_LOGO_HEIGHT + GAP_HEIGHT + TEXT_HEIGHT;
 const SPIRAL_TOTAL_HEIGHT: u16 = SPIRAL_GALAXY_HEIGHT;
 
+#[allow(clippy::too_many_arguments)]
 pub fn render_chat(
     frame: &mut Frame,
     area: Rect,
@@ -71,10 +72,11 @@ pub fn render_chat(
     chat_input: &str,
     agent_status: AgentStatus,
     autocomplete: AutocompleteParams,
+    ruixen_emoji: &str,
 ) {
     let chat_block = Block::new()
         .borders(Borders::ALL)
-        .title(" 🤨 🔍 💡 ")
+        .title(format!(" {} ", ruixen_emoji))
         .style(theme.ratatui_style(Element::Text));
 
     let inner_area = chat_block.inner(area);
