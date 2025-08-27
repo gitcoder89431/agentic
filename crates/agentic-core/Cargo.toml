@@ -2,6 +2,10 @@
 name = "agentic-core"
 version = "0.1.0"
 edition = "2021"
+description = "Core AI orchestration library for Ruixen - the collaborative AI agent framework"
+license = "MIT"
+repository = "https://github.com/gitcoder89431/agentic"
+homepage = "https://github.com/gitcoder89431/agentic"
 
 [dependencies]
 serde = { workspace = true }
