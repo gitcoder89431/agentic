@@ -109,26 +109,26 @@ impl Theme {
             },
             // Terminal.app fallback colors
             (ThemeVariant::EverforestDark, true) => ColorPalette {
-                background: Color::Reset,     // Use terminal's default background
+                background: Color::Reset, // Use terminal's default background
                 foreground: Color::White,
                 accent: Color::Green,
                 secondary: Color::Red,
                 info: Color::Cyan,
-                border: Color::Gray,          // Gray instead of DarkGray for visibility
-                selection: Color::Blue,       // Blue selection for better visibility
+                border: Color::Gray,    // Gray instead of DarkGray for visibility
+                selection: Color::Blue, // Blue selection for better visibility
                 cursor: Color::White,
                 warning: Color::Yellow,
             },
             (ThemeVariant::EverforestLight, true) => ColorPalette {
-                background: Color::Reset,     // Use terminal's default background
+                background: Color::Reset, // Use terminal's default background
                 foreground: Color::Black,
                 accent: Color::Green,
                 secondary: Color::Red,
-                info: Color::Blue,            // Blue instead of Cyan for better contrast
-                border: Color::DarkGray,      // DarkGray for better contrast
-                selection: Color::Yellow,     // Yellow instead of LightYellow
+                info: Color::Blue,       // Blue instead of Cyan for better contrast
+                border: Color::DarkGray, // DarkGray for better contrast
+                selection: Color::Yellow, // Yellow instead of LightYellow
                 cursor: Color::Black,
-                warning: Color::Magenta,      // Magenta for warnings to stand out
+                warning: Color::Magenta, // Magenta for warnings to stand out
             },
         };
 
