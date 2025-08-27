@@ -86,20 +86,20 @@ impl Theme {
                 accent: Color::Rgb(167, 192, 128),     // #a7c080 (green)
                 secondary: Color::Rgb(230, 126, 128),  // #e67e80 (red)
                 info: Color::Rgb(127, 187, 179),       // #7fbbb3 (aqua)
-                border: Color::Rgb(116, 125, 135),     // #747d87 (gray)
+                border: Color::Rgb(130, 140, 150),     // #828c96 (lighter gray for better contrast)
                 selection: Color::Rgb(64, 72, 78),     // #40484e (darker bg)
                 cursor: Color::Rgb(211, 198, 170),     // #d3c6aa (same as fg)
                 warning: Color::Rgb(219, 188, 127),    // #dbbc7f (yellow/orange)
             },
             ThemeVariant::EverforestLight => ColorPalette {
                 background: Color::Rgb(253, 246, 227), // #fdf6e3
-                foreground: Color::Rgb(92, 106, 114),  // #5c6a72
+                foreground: Color::Rgb(76, 86, 94),    // #4c565e (darker for better readability)
                 accent: Color::Rgb(141, 161, 1),       // #8da101 (green)
                 secondary: Color::Rgb(248, 85, 82),    // #f85552 (red)
                 info: Color::Rgb(53, 167, 124),        // #35a77c (aqua)
                 border: Color::Rgb(150, 160, 170),     // #96a0aa (gray)
                 selection: Color::Rgb(243, 236, 217),  // #f3ecd9 (darker bg)
-                cursor: Color::Rgb(92, 106, 114),      // #5c6a72 (same as fg)
+                cursor: Color::Rgb(76, 86, 94),        // #4c565e (same as fg)
                 warning: Color::Rgb(207, 131, 44),     // #cf832c (yellow/orange)
             },
         };
