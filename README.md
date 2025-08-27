@@ -1,219 +1,214 @@
-# 🚀 Agentic - Production-Ready TUI Framework
+# Agentic
 
-[![Rust CI](https://github.com/gitcoder89431/agentic/actions/workflows/rust.yml/badge.svg)](https://github.com/gitcoder89431/agentic/actions/workflows/rust.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+```
+    █████╗  ██████╗ ███████╗███╗   ██╗████████╗██╗ ██████╗
+   ██╔══██╗██╔════╝ ██╔════╝████╗  ██║╚══██╔══╝██║██╔════╝
+   ███████║██║  ███╗█████╗  ██╔██╗ ██║   ██║   ██║██║     
+   ██╔══██║██║   ██║██╔══╝  ██║╚██╗██║   ██║   ██║██║     
+   ██║  ██║╚██████╔╝███████╗██║ ╚████║   ██║   ██║╚██████╗
+   ╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚═╝  ╚═══╝   ╚═╝   ╚═╝ ╚═════╝
+```
 
-> **Version:** 0.1.0  
-> **Status:** Production Ready ✅
+[![Build Status](https://github.com/gitcoder89431/agentic/workflows/CI/badge.svg)](https://github.com/gitcoder89431/agentic/actions)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Crate](https://img.shields.io/crates/v/agentic.svg)](https://crates.io/crates/agentic)
 
-A beautiful, responsive terminal user interface (TUI) application built with modern Rust architecture. Features Everforest theming, Taffy flexbox layouts, and comprehensive event handling.
+**Agentic :: The agent you work WITH**  
+**AI Model Orchestrator & Agent Framework**
 
-## 🎨 Features
+<!-- GIF Demo placeholder - add your demo GIF here -->
+![Demo](demo.gif)
 
-- **🌲 Everforest Theme System**: Dark/Light theme variants with runtime switching
-- **📐 Responsive Layouts**: Taffy-powered flexbox-style layout engine
-- **⚡ Event-Driven Architecture**: Clean async/await with proper state management  
-- **🔧 Production Ready**: Comprehensive CI/CD pipeline with quality gates
-- **🎯 Zero Dependencies**: Minimal, focused dependency tree
-- **✨ Beautiful ASCII Art**: Elegant logo with centered presentation
+## Core Philosophy
 
-## 🚀 Quick Start
+Agentic transforms the typical command-response dynamic into true collaboration. Instead of barking orders at an AI, you work together through thoughtful query refinement and synthesis. Our "Karesansui" design philosophy creates a zen garden of computational thought - clean, minimalist, and purposeful. Every interaction flows like carefully placed stones in sand, building toward profound understanding rather than quick answers.
 
-### Prerequisites
+## Key Features
 
-- **Rust 1.70+** (tested with latest stable)
-- **Terminal** with true color support recommended
+• **Collaborative Query Refinement** via a Local AI Orchestrator  
+• **Seamless Integration** with Powerful Cloud Models (via OpenRouter)  
+• **Minimalist, Keyboard-Driven** "Zen Garden" TUI  
+• **Creates Structured, "Atomic Notes"** (Markdown + YAML) for your Knowledge Base  
+• **Built in Rust** 🦀 for a Fast, Native Experience
 
-### Installation & Running
+## Installation
 
+### Download Release Binaries
+
+**macOS (Intel/Apple Silicon)**
 ```bash
-# Clone the repository
+curl -L https://github.com/gitcoder89431/agentic/releases/download/v0.1.0/agentic-macos.tar.gz | tar xz
+sudo mv agentic /usr/local/bin/
+```
+
+**Linux (x86_64)**  
+```bash
+curl -L https://github.com/gitcoder89431/agentic/releases/download/v0.1.0/agentic-linux.tar.gz | tar xz
+sudo mv agentic /usr/local/bin/
+```
+
+**Windows**
+```powershell
+# Download from releases page and add to PATH
+# https://github.com/gitcoder89431/agentic/releases/download/v0.1.0/agentic-windows.zip
+```
+
+### Build from Source
+```bash
 git clone https://github.com/gitcoder89431/agentic.git
 cd agentic
-
-# Run the application
-cargo run
-
-# Or build for release
 cargo build --release
-./target/release/agentic
+./target/release/agentic-tui
 ```
 
-### Controls
+## Configuration
 
-- **ESC / q**: Quit application  
-- **t / T**: Toggle between Dark/Light themes
-- **Ctrl+C**: Force quit with signal handling
-- **Terminal Resize**: Automatic layout recalculation
+⚠️ **Important**: Agentic requires **BOTH** a local AI model (for query orchestration) and a cloud model (for synthesis) to function. The local model privately refines your questions, then the cloud model creates the final insights.
 
-## 🛠️ Development
+### Complete Setup Guide
 
-### Local Development
+Follow these steps in order - you need both components:
 
-Before pushing changes, run these checks locally:
+#### Step 1: Local AI Setup (Required)
 
-```bash
-# Format code
-cargo fmt
+1. **Install Ollama** (Free, runs on your computer)
+   ```bash
+   # macOS
+   brew install ollama
+   
+   # Or download from: https://ollama.ai
+   ```
 
-# Check formatting
-cargo fmt --check
+2. **Download a Local Model**
+   ```bash
+   # Start Ollama service
+   ollama serve
+   
+   # In another terminal, pull a model (this may take a few minutes)
+   ollama pull llama3.2:3b    # Good balance of speed/quality
+   # or
+   ollama pull qwen2.5:7b     # Higher quality, needs more RAM
+   ```
 
-# Run lints  
-cargo clippy -- -D warnings
+3. **Configure in Agentic**
+   - In Settings, set "Local Endpoint" to `localhost:11434`
+   - Select your downloaded model from the list
+   - This handles initial query refinement privately on your machine
 
-# Run tests
-cargo test
+#### Step 2: Cloud Setup (Required)
 
-# Check compilation
-cargo check
-```
+1. **Get an OpenRouter Account**
+   - Visit [openrouter.ai](https://openrouter.ai) and sign up (takes 2 minutes)
+   - Generate an API key from your dashboard
+   - Add $5-10 credit OR use free models (see guide below)
 
-### 🔧 CI/CD Pipeline
+2. **Configure in Agentic**
+   - Run `agentic` in your terminal
+   - Press `s` to open Settings
+   - Navigate to "Cloud API Key" and paste your OpenRouter key
+   - Browse available models and select one (see model selection guide below)
+   - Press `s` to save
 
-Our GitHub Actions CI pipeline ensures code quality with multiple validation layers:
+### 🎯 Model Selection Guide
 
-#### Pipeline Jobs
+When choosing a cloud model in Agentic's settings, look for these indicators:
 
-1. **🏗️ Build & Test** (`build_and_test`)
-   - Code formatting validation (`cargo fmt --check`)
-   - Lint checking with zero warnings (`cargo clippy -- -D warnings`)
-   - Compilation verification (`cargo build --verbose`)
-   - Test suite execution (`cargo test --verbose`)
+**💰 Cost Structure:**
+- Models with `:free` suffix = Completely free (perfect for learning)
+- Models with pricing = Pay per token (~$0.50-10 per 1M tokens)
+- Check the "pricing" column to see prompt/completion costs
 
-2. **🛡️ Security Audit** (`security_audit`)
-   - Vulnerability scanning with `cargo audit`
-   - Checks for known security issues in dependencies
+**🧠 Model Types:**
+- Look for `:instruct` or `:chat` in the name = Good for conversations (what you want)
+- Avoid `:base` models = Raw models without instruction training
+- Avoid `:embed` models = For embeddings only, not chat
 
-3. **📦 Dependency Check** (`check_dependencies`)
-   - Validates dependency freshness with `cargo outdated`
-   - Ensures we're using up-to-date packages
+**📏 Context Length:**
+- 4k-8k tokens = Good for short conversations  
+- 32k-128k tokens = Better for longer discussions
+- 1M+ tokens = Can handle very long contexts (costs more)
 
-#### Trigger Conditions
+**🏷️ Model Families:**
+- `anthropic/claude-*` = Excellent reasoning and safety
+- `openai/gpt-*` = Well-rounded performance
+- `meta-llama/*` = Open source, good quality
+- `google/gemini-*` = Strong at analysis and coding
+- `deepseek/*` = Often have free versions available
 
-- **Pushes to `main`**: Full pipeline execution
-- **Pull Requests**: All jobs run before merge approval
-- **Manual triggers**: Available via GitHub Actions UI
+**💡 Beginner Tips:**
+- Start with any `:free` model to test the system
+- If you have credits, try `anthropic/claude-3.5-sonnet` for quality
+- Higher context length = more expensive but can handle longer discussions
+- The model list updates frequently - newer models often perform better
 
-#### Performance Optimizations
+#### Step 3: Ready to Collaborate!
 
-- **Cargo Registry Cache**: Speeds up dependency downloads
-- **Target Directory Cache**: Accelerates compilation 
-- **Hash-Based Invalidation**: Efficient cache management with `Cargo.lock`
+- Type your question naturally
+- Watch the local model orchestrate thoughtful proposals
+- Choose a proposal for the cloud model to synthesize
+- Save the resulting "atomic note" to your knowledge base
+- **Files are automatically saved** to `~/Documents/ruixen/` as Markdown with YAML metadata
 
-#### Common Failure Scenarios & Fixes
+### Why Both Models?
 
-| Error | Cause | Fix |
-|-------|-------|-----|
-| `cargo fmt --check failed` | Inconsistent formatting | Run `cargo fmt` locally |
-| `cargo clippy warnings` | Lint violations | Fix warnings or use `#[allow(...)]` |
-| `tests failed` | Broken functionality | Fix failing tests |
-| `security vulnerabilities` | Outdated dependencies | Run `cargo audit fix` |
+The **local model** (Ollama) handles query orchestration privately on your machine, while the **cloud model** (OpenRouter) provides powerful synthesis capabilities. This hybrid approach gives you both privacy and cutting-edge AI performance!
 
-### 🏗️ Architecture
+### Troubleshooting
 
-```
-┌─────────────────────────────────────────────────────────┐
-│                    AGENTIC TUI                          │
-├─────────────────────────────────────────────────────────┤
-│  Event System     │  Theme Engine    │  Layout Engine   │
-│  ──────────────   │  ─────────────   │  ─────────────   │
-│  • AppEvent       │  • Everforest    │  • Taffy 3-Layer │
-│  • AppState       │  • Dark/Light    │  • Header/Body   │
-│  • Async Runtime  │  • Runtime Switch│  • Footer/Flex   │
-├─────────────────────────────────────────────────────────┤
-│                    Ratatui Core                         │
-│                  Crossterm Backend                      │
-└─────────────────────────────────────────────────────────┘
-```
+**"Local endpoint not accessible"**
+- Make sure Ollama is running: `ollama serve`
+- Check the endpoint in settings: `localhost:11434`
 
-### 📁 Project Structure
+**"OpenRouter API key invalid"**  
+- Verify your key starts with `sk-or-v1-`
+- Check you have credits or selected a free model
+
+**"Model not found"**
+- For local: ensure model is downloaded with `ollama list`
+- For cloud: verify model name exactly matches OpenRouter's list
+
+## Usage
+
+**Navigation**
+- `Tab/Shift+Tab` - Navigate between UI elements
+- `↑/↓ or j/k` - Move through lists and proposals  
+- `Enter` - Select/Confirm actions
+- `Esc` - Return to previous screen
+- `q` - Quit application
+
+**Slash Commands**
+- `/settings` - Open configuration modal
+- `/about` - View application information  
+- `/quit` - Exit the application
+
+**Key Bindings**
+- `s` - Quick access to Settings
+- `a` - Quick access to About
+- `Left/Right` - Scroll through About page content
+
+## Architecture
+
+Agentic follows the RuixenOS workspace architecture:
 
 ```
 agentic/
-├── .github/workflows/    # CI/CD pipeline configuration
-├── src/
-│   ├── events.rs        # Event handling & state management
-│   ├── layout.rs        # Taffy flexbox layout engine
-│   ├── theme.rs         # Everforest theme system  
-│   ├── ui/              # User interface components
-│   │   ├── app.rs       # Main application logic
-│   │   └── mod.rs       # UI module declarations
-│   ├── lib.rs           # Library root
-│   └── main.rs          # Application entry point
-├── examples/            # Demo applications
-├── Cargo.toml          # Project dependencies
-└── README.md           # Project documentation
+├── crates/
+│   ├── agentic-core/     # The "motor" - reusable AI logic
+│   ├── agentic-tui/      # The "drill" - terminal interface  
+│   └── starlit-gui/      # Future graphical interface
+└── Cargo.toml            # Workspace configuration
 ```
 
-## 🧪 Testing
+This modular design allows the same AI capabilities to power multiple interfaces while maintaining clean separation between logic and presentation.
 
-### Unit Tests
+## License
 
-```bash
-# Run all tests
-cargo test
+MIT License - see [LICENSE](LICENSE) for details.
 
-# Run tests with output
-cargo test -- --nocapture
+## Contributing
 
-# Run specific test
-cargo test test_name
-```
-
-### Manual Testing
-
-```bash
-# Theme demo
-cargo run --example theme_demo
-
-# Layout demo  
-cargo run --example layout_demo
-
-# Input handling demo
-cargo run --example issue_4_demo
-```
-
-## 📦 Dependencies
-
-### Core Dependencies
-- **ratatui** (0.27): Terminal UI framework
-- **crossterm** (0.27): Cross-platform terminal handling
-- **tokio** (1.0): Async runtime  
-- **taffy** (0.4): Flexbox layout engine
-
-### Development Dependencies
-- **GitHub Actions**: Automated CI/CD
-- **cargo-audit**: Security vulnerability scanning
-- **cargo-outdated**: Dependency freshness checks
-
-## 🤝 Contributing
-
-1. **Fork** the repository
-2. **Create** a feature branch (`git checkout -b feature/amazing-feature`)
-3. **Run** local checks (`cargo fmt && cargo clippy && cargo test`)
-4. **Commit** changes (`git commit -m 'Add amazing feature'`)
-5. **Push** to branch (`git push origin feature/amazing-feature`)
-6. **Open** a Pull Request
-
-### Pull Request Process
-
-- ✅ All CI checks must pass (formatting, lints, tests, security)
-- ✅ Code must follow Rust best practices
-- ✅ Include tests for new functionality  
-- ✅ Update documentation as needed
-
-## 📄 License
-
-This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) file for details.
-
-## 🙏 Acknowledgments
-
-- **Ratatui Community** for the excellent TUI framework
-- **Taffy Team** for the powerful layout engine  
-- **Everforest** color scheme for beautiful aesthetics
-- **Rust Community** for amazing tooling and ecosystem
+Built with constitutional Rust patterns and love. Issues and PRs welcome!
 
 ---
 
-**Built with ❤️ using Rust** 🦀
+*The curiosity machine doesn't just process queries - it awakens wonder.*

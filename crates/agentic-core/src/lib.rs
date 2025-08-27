@@ -44,7 +44,7 @@ mod tests {
     #[tokio::test]
     async fn test_openrouter_integration() {
         let validator = ModelValidator::new();
-        let api_key = "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";
+        let api_key = "sk-or-v1-test-key-redacted";
 
         let result = validator.fetch_openrouter_models(api_key).await;
 
@@ -151,7 +151,7 @@ mod tests {
 
         // First, get actual working models
         let ollama_models = validator.fetch_ollama_models("localhost:11434").await;
-        let api_key = "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";
+        let api_key = "sk-or-v1-test-key-redacted";
         let openrouter_models = validator.fetch_openrouter_models(api_key).await;
 
         match (ollama_models, openrouter_models) {
@@ -219,7 +219,7 @@ mod tests {
         println!("🧪 Testing modal model loading scenarios...");
 
         let validator = ModelValidator::new();
-        let api_key = "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";
+        let api_key = "sk-or-v1-test-key-redacted";
 
         // Test OpenRouter models for modal display
         match validator.fetch_openrouter_models(api_key).await {
@@ -310,7 +310,7 @@ mod tests {
             }
         }
 
-        let test_key = "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";
+        let test_key = "sk-or-v1-test-key-redacted";
         let formatted = format_api_key_display(test_key);
 
         println!("🧪 Testing API key truncation:");

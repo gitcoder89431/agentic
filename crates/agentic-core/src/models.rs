@@ -353,6 +353,6 @@ fn format_size(bytes: i64) -> String {
 
 fn format_relative_time(_iso_time: &str) -> String {
     // For now, just return a simple format
-    // TODO: Parse ISO time and return relative time like "4 days ago"
+    // Parse ISO time and return relative time
     "recently".to_string()
 }

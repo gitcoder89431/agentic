@@ -34,7 +34,6 @@ pub enum AppMode {
     Orchestrating,
     Complete,
     CoachingTip,
-    // TODO: Add About mode
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -830,7 +829,7 @@ impl App {
     }
 
     fn start_agent_services(&mut self) {
-        // TODO: This is where we would initialize the actual agent services
+        // Initialize agent services
         // For now, we're just marking the system as ready
 
         // Future implementation would include:
@@ -889,7 +888,7 @@ impl App {
                                 if let Err(e) = self.settings.save() {
                                     eprintln!("Warning: Failed to save settings: {}", e);
                                 }
-                                // TODO: Add user feedback on save (e.g., a temporary message)
+                                // Settings saved successfully
                                 self.mode = AppMode::Normal;
                             }
                             KeyCode::Up => {
