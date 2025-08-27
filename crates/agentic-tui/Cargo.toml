@@ -6,6 +6,7 @@ description = "Ruixen - The collaborative AI agent you work WITH, not at. Transf
 license = "MIT"
 repository = "https://github.com/gitcoder89431/agentic"
 homepage = "https://github.com/gitcoder89431/agentic"
+readme = "../../README.md"
 
 [[bin]]
 name = "ruixen"
