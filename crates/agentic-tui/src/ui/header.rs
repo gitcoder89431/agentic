@@ -34,7 +34,7 @@ pub fn render_header(
             Block::new()
                 .borders(Borders::ALL)
                 .title(title)
-                .style(theme.ratatui_style(Element::Title)),
+                .style(theme.ratatui_style(Element::Text)),
         );
 
     frame.render_widget(header_paragraph, area);

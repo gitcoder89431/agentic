@@ -5,7 +5,6 @@ use agentic_core::{
 };
 use ratatui::{
     prelude::{Alignment, Constraint, Direction, Frame, Layout, Rect},
-    style::Modifier,
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph},
 };
@@ -43,25 +42,30 @@ pub fn render_settings_modal(
 
     // Helper to create a setting line
     let create_setting_line = |label: &str, value: &str, is_selected: bool, is_editing: bool| {
-        let value_style = if is_selected {
-            theme.highlight_style()
-        } else {
-            theme.text_style()
-        };
-
         let display_value = if is_editing {
             format!("{}_", value) // Add cursor indicator when editing
         } else {
             value.to_owned()
         };
 
-        Line::from(vec![
-            Span::styled(
-                format!("{:<15}", label),
-                theme.warning_style().add_modifier(Modifier::BOLD),
-            ),
-            Span::styled(display_value, value_style),
-        ])
+        if is_selected {
+            // Selected: highlight background + bright text (full focus treatment)
+            Line::from(vec![
+                Span::styled(
+                    format!("{:<15}{}", label, display_value),
+                    theme.highlight_style(), // Highlight background for entire row
+                ),
+            ])
+        } else {
+            // Unselected: dim label + dim value (fades away)
+            Line::from(vec![
+                Span::styled(
+                    format!("{:<15}", label),
+                    theme.ratatui_style(Element::Inactive), // Dim for unselected labels
+                ),
+                Span::styled(display_value, theme.ratatui_style(Element::Inactive)), // Dim values too
+            ])
+        }
     };
 
     // Endpoint
