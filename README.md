@@ -211,6 +211,10 @@ This modular design allows the same AI capabilities to power multiple interfaces
 
 MIT License - see [LICENSE](LICENSE) for details.
 
+## Credits
+
+**UI Theme:** Everforest color scheme by [sainnhe](https://github.com/sainnhe/everforest) - A comfortable and pleasant green forest color scheme.
+
 ## Contributing
 
 Built with constitutional Rust patterns and love. Issues and PRs welcome!
