@@ -71,10 +71,11 @@ pub fn render_chat(
     chat_input: &str,
     agent_status: AgentStatus,
     autocomplete: AutocompleteParams,
+    ruixen_emoji: &str,
 ) {
     let chat_block = Block::new()
         .borders(Borders::ALL)
-        .title(" 🤨 🔍 💡 ")
+        .title(format!(" {} ", ruixen_emoji))
         .style(theme.ratatui_style(Element::Text));
 
     let inner_area = chat_block.inner(area);
