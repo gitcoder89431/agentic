@@ -1,10 +1,10 @@
 [package]
-name = "agentic-tui"
+name = "ruixen"
 version = "0.1.0"
 edition = "2021"
 
 [[bin]]
-name = "agentic-tui"
+name = "ruixen"
 path = "src/main.rs"
 
 [dependencies]

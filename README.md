@@ -9,9 +9,8 @@
    ╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚═╝  ╚═══╝   ╚═╝   ╚═╝ ╚═════╝
 ```
 
-[![Build Status](https://github.com/gitcoder89431/agentic/workflows/CI/badge.svg)](https://github.com/gitcoder89431/agentic/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Crate](https://img.shields.io/crates/v/agentic.svg)](https://crates.io/crates/agentic)
+[![Crate](https://img.shields.io/crates/v/ruixen.svg)](https://crates.io/crates/ruixen)
 
 **Agentic :: The agent you work WITH**  
 **AI Model Orchestrator & Agent Framework**
@@ -58,7 +57,14 @@ sudo mv agentic /usr/local/bin/
 git clone https://github.com/gitcoder89431/agentic.git
 cd agentic
 cargo build --release
-./target/release/agentic-tui
+./target/release/ruixen
+```
+
+### Install via Cargo
+```bash
+cargo install ruixen
+# Then run with:
+ruixen
 ```
 
 ## Configuration
@@ -103,7 +109,7 @@ Follow these steps in order - you need both components:
    - Add $5-10 credit OR use free models (see guide below)
 
 2. **Configure in Agentic**
-   - Run `agentic` in your terminal
+   - Run `ruixen` in your terminal
    - Press `s` to open Settings
    - Navigate to "Cloud API Key" and paste your OpenRouter key
    - Browse available models and select one (see model selection guide below)
