@@ -169,7 +169,7 @@ pub struct App {
     autocomplete_index: usize,
     ruixen_reaction_state: Option<RuixenState>, // Temporary reaction state
     reaction_timer: Option<std::time::Instant>, // When reaction started
-    last_api_call: Option<std::time::Instant>, // Rate limiting protection
+    last_api_call: Option<std::time::Instant>,  // Rate limiting protection
 }
 
 impl App {
@@ -515,10 +515,13 @@ impl App {
                     modal_height,
                 );
                 // Add subtle backdrop darkening for better modal focus
-                let backdrop = Block::default()
-                    .style(self.theme.ratatui_style(Element::Background).bg(ratatui::style::Color::Rgb(20, 20, 20)));
+                let backdrop = Block::default().style(
+                    self.theme
+                        .ratatui_style(Element::Background)
+                        .bg(ratatui::style::Color::Rgb(20, 20, 20)),
+                );
                 frame.render_widget(backdrop, size);
-                
+
                 frame.render_widget(Clear, modal_area); // clears the background
 
                 if self.mode == AppMode::SelectingLocalModel {
@@ -580,10 +583,13 @@ impl App {
                     modal_height,
                 );
                 // Add subtle backdrop darkening for better modal focus
-                let backdrop = Block::default()
-                    .style(self.theme.ratatui_style(Element::Background).bg(ratatui::style::Color::Rgb(20, 20, 20)));
+                let backdrop = Block::default().style(
+                    self.theme
+                        .ratatui_style(Element::Background)
+                        .bg(ratatui::style::Color::Rgb(20, 20, 20)),
+                );
                 frame.render_widget(backdrop, size);
-                
+
                 frame.render_widget(Clear, modal_area);
                 self.render_synthesize_modal(frame, modal_area);
             } else if self.mode == AppMode::CoachingTip {
@@ -602,10 +608,13 @@ impl App {
                     modal_height,
                 );
                 // Add subtle backdrop darkening for better modal focus
-                let backdrop = Block::default()
-                    .style(self.theme.ratatui_style(Element::Background).bg(ratatui::style::Color::Rgb(20, 20, 20)));
+                let backdrop = Block::default().style(
+                    self.theme
+                        .ratatui_style(Element::Background)
+                        .bg(ratatui::style::Color::Rgb(20, 20, 20)),
+                );
                 frame.render_widget(backdrop, size);
-                
+
                 frame.render_widget(Clear, modal_area);
                 self.render_coaching_tip_modal(frame, modal_area);
             } else if self.mode == AppMode::Complete {
@@ -1094,8 +1103,11 @@ impl App {
                                 // Synthesize - send proposal to cloud for synthesis
                                 // Rate limiting: only allow if not already processing and sufficient cooldown
                                 let can_make_request = self.agent_status != AgentStatus::Searching
-                                    && self.last_api_call.map(|t| t.elapsed().as_secs() >= 2).unwrap_or(true);
-                                
+                                    && self
+                                        .last_api_call
+                                        .map(|t| t.elapsed().as_secs() >= 2)
+                                        .unwrap_or(true);
+
                                 if can_make_request {
                                     if let Some(proposal) =
                                         self.proposals.get(self.current_proposal_index)
