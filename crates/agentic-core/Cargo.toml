@@ -1,6 +1,6 @@
 [package]
 name = "agentic-core"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 description = "Core AI orchestration library for Ruixen - the collaborative AI agent framework"
 license = "MIT"

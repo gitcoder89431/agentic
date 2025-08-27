@@ -79,28 +79,56 @@ impl Default for Theme {
 impl Theme {
     /// Create a new theme with the specified variant
     pub fn new(variant: ThemeVariant) -> Self {
-        let colors = match variant {
-            ThemeVariant::EverforestDark => ColorPalette {
+        // Check if we're in Terminal.app (which has poor RGB support)
+        let use_basic_colors = std::env::var("TERM_PROGRAM")
+            .map(|term| term == "Apple_Terminal")
+            .unwrap_or(false);
+
+        let colors = match (variant, use_basic_colors) {
+            (ThemeVariant::EverforestDark, false) => ColorPalette {
                 background: Color::Rgb(45, 53, 59),    // #2d353b
                 foreground: Color::Rgb(211, 198, 170), // #d3c6aa
                 accent: Color::Rgb(167, 192, 128),     // #a7c080 (green)
                 secondary: Color::Rgb(230, 126, 128),  // #e67e80 (red)
                 info: Color::Rgb(127, 187, 179),       // #7fbbb3 (aqua)
-                border: Color::Rgb(130, 140, 150),     // #828c96 (lighter gray for better contrast)
-                selection: Color::Rgb(64, 72, 78),     // #40484e (darker bg)
-                cursor: Color::Rgb(211, 198, 170),     // #d3c6aa (same as fg)
-                warning: Color::Rgb(219, 188, 127),    // #dbbc7f (yellow/orange)
+                border: Color::Rgb(130, 140, 150),     // #828c96
+                selection: Color::Rgb(64, 72, 78),     // #40484e
+                cursor: Color::Rgb(211, 198, 170),     // #d3c6aa
+                warning: Color::Rgb(219, 188, 127),    // #dbbc7f
             },
-            ThemeVariant::EverforestLight => ColorPalette {
+            (ThemeVariant::EverforestLight, false) => ColorPalette {
                 background: Color::Rgb(253, 246, 227), // #fdf6e3
-                foreground: Color::Rgb(76, 86, 94),    // #4c565e (darker for better readability)
-                accent: Color::Rgb(141, 161, 1),       // #8da101 (green)
-                secondary: Color::Rgb(248, 85, 82),    // #f85552 (red)
-                info: Color::Rgb(53, 167, 124),        // #35a77c (aqua)
-                border: Color::Rgb(150, 160, 170),     // #96a0aa (gray)
-                selection: Color::Rgb(243, 236, 217),  // #f3ecd9 (darker bg)
-                cursor: Color::Rgb(76, 86, 94),        // #4c565e (same as fg)
-                warning: Color::Rgb(207, 131, 44),     // #cf832c (yellow/orange)
+                foreground: Color::Rgb(76, 86, 94),    // #4c565e
+                accent: Color::Rgb(141, 161, 1),       // #8da101
+                secondary: Color::Rgb(248, 85, 82),    // #f85552
+                info: Color::Rgb(53, 167, 124),        // #35a77c
+                border: Color::Rgb(150, 160, 170),     // #96a0aa
+                selection: Color::Rgb(243, 236, 217),  // #f3ecd9
+                cursor: Color::Rgb(76, 86, 94),        // #4c565e
+                warning: Color::Rgb(207, 131, 44),     // #cf832c
+            },
+            // Terminal.app fallback colors
+            (ThemeVariant::EverforestDark, true) => ColorPalette {
+                background: Color::Reset,     // Use terminal's default background
+                foreground: Color::White,
+                accent: Color::Green,
+                secondary: Color::Red,
+                info: Color::Cyan,
+                border: Color::Gray,          // Gray instead of DarkGray for visibility
+                selection: Color::Blue,       // Blue selection for better visibility
+                cursor: Color::White,
+                warning: Color::Yellow,
+            },
+            (ThemeVariant::EverforestLight, true) => ColorPalette {
+                background: Color::Reset,     // Use terminal's default background
+                foreground: Color::Black,
+                accent: Color::Green,
+                secondary: Color::Red,
+                info: Color::Blue,            // Blue instead of Cyan for better contrast
+                border: Color::DarkGray,      // DarkGray for better contrast
+                selection: Color::Yellow,     // Yellow instead of LightYellow
+                cursor: Color::Black,
+                warning: Color::Magenta,      // Magenta for warnings to stand out
             },
         };
 

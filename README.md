@@ -36,20 +36,20 @@ Agentic transforms the typical command-response dynamic into true collaboration.
 
 **macOS (Intel/Apple Silicon)**
 ```bash
-curl -L https://github.com/gitcoder89431/agentic/releases/download/v0.1.0/agentic-macos.tar.gz | tar xz
+curl -L https://github.com/gitcoder89431/agentic/releases/download/v0.1.1/agentic-macos.tar.gz | tar xz
 sudo mv agentic /usr/local/bin/
 ```
 
 **Linux (x86_64)**  
 ```bash
-curl -L https://github.com/gitcoder89431/agentic/releases/download/v0.1.0/agentic-linux.tar.gz | tar xz
+curl -L https://github.com/gitcoder89431/agentic/releases/download/v0.1.1/agentic-linux.tar.gz | tar xz
 sudo mv agentic /usr/local/bin/
 ```
 
 **Windows**
 ```powershell
 # Download from releases page and add to PATH
-# https://github.com/gitcoder89431/agentic/releases/download/v0.1.0/agentic-windows.zip
+# https://github.com/gitcoder89431/agentic/releases/download/v0.1.1/agentic-windows.zip
 ```
 
 ### Build from Source
