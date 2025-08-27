@@ -1,6 +1,6 @@
 [package]
 name = "ruixen"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 description = "Ruixen - The collaborative AI agent you work WITH, not at. Transform questions into profound insights through thoughtful query refinement and synthesis."
 license = "MIT"
@@ -13,7 +13,7 @@ name = "ruixen"
 path = "src/main.rs"
 
 [dependencies]
-agentic-core = { path = "../agentic-core", version = "0.1.1" }
+agentic-core = { path = "../agentic-core", version = "0.1.2" }
 anyhow = { workspace = true }
 crossterm = { workspace = true }
 ratatui = { workspace = true }
