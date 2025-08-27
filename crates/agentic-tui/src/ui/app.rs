@@ -1361,7 +1361,7 @@ impl App {
                 chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC"),
                 self.original_user_query.replace("\"", "\\\""),
                 clean_proposal.replace("\"", "\\\""),
-                note.header_tags.iter().map(|tag| format!("\"{}\"", tag)).collect::<Vec<_>>().join(", "),
+                note.header_tags.join(", "),
                 local_model,
                 local_prompt_tokens,
                 local_completion_tokens,
