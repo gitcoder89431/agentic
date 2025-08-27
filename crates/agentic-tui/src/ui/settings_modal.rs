@@ -50,12 +50,10 @@ pub fn render_settings_modal(
 
         if is_selected {
             // Selected: highlight background + bright text (full focus treatment)
-            Line::from(vec![
-                Span::styled(
-                    format!("{:<15}{}", label, display_value),
-                    theme.highlight_style(), // Highlight background for entire row
-                ),
-            ])
+            Line::from(vec![Span::styled(
+                format!("{:<15}{}", label, display_value),
+                theme.highlight_style(), // Highlight background for entire row
+            )])
         } else {
             // Unselected: dim label + dim value (fades away)
             Line::from(vec![
