@@ -33,20 +33,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "agentic-tui"
-version = "0.1.0"
-dependencies = [
- "agentic-core",
- "anyhow",
- "chrono",
- "crossterm",
- "ratatui",
- "tokio",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
 name = "allocator-api2"
 version = "0.2.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1165,6 +1151,20 @@ dependencies = [
  "libc",
  "untrusted",
  "windows-sys 0.52.0",
+]
+
+[[package]]
+name = "ruixen"
+version = "0.1.0"
+dependencies = [
+ "agentic-core",
+ "anyhow",
+ "chrono",
+ "crossterm",
+ "ratatui",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
