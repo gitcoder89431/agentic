@@ -161,6 +161,7 @@ pub struct App {
     final_prompt: String,
     cloud_response: Option<AtomicNote>,
     synthesis_scroll: u16,
+    about_scroll: u16,
     coaching_tip: (String, String),
     local_tokens_used: u32, // Token count for current local request
     cloud_tokens_used: u32, // Token count for current cloud request
@@ -196,6 +197,7 @@ impl App {
             final_prompt: String::new(),
             cloud_response: None,
             synthesis_scroll: 0,
+            about_scroll: 0,
             coaching_tip: (String::new(), String::new()),
             local_tokens_used: 0,
             cloud_tokens_used: 0,
@@ -266,7 +268,7 @@ impl App {
         if body_length > 800 && has_insights && tag_count > 3 {
             RuixenState::Celebrating // 💎🚀🎯 - Excellent synthesis, celebration!
         } else if body_length > 400 && (has_insights || has_technical_terms) {
-            RuixenState::Celebrating // 💎🚀🎯 - Good synthesis, satisfied
+            RuixenState::Resting // 😴💤🌙 - Good synthesis, satisfied
         } else if body_length < 200 {
             RuixenState::Confused // 😅🤦‍♂️📝 - Short response, maybe didn't work well
         } else {
@@ -380,28 +382,36 @@ impl App {
         let inner_area = block.inner(area);
         frame.render_widget(block, area);
 
-        // Split area: message + tips
+        // Split area: message + navigation footer
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
                 Constraint::Min(5),    // Main message (flexible)
-                Constraint::Length(3), // Tips footer
+                Constraint::Length(1), // Navigation footer - single line like settings
             ])
             .split(inner_area);
 
-        let message = Paragraph::new(message.as_str())
-            .alignment(Alignment::Center)
+        let mut message = Paragraph::new(message.as_str())
+            .alignment(Alignment::Left) // Use Left alignment for better scrolling readability
             .style(self.theme.ratatui_style(Element::Text))
             .wrap(Wrap { trim: true });
 
+        // Apply scrolling only for About pages
+        if title.contains("About RuixenOS") {
+            message = message.scroll((self.about_scroll, 0));
+        }
+
         frame.render_widget(message, chunks[0]);
 
-        // Navigation footer
-        let footer_text = "Press [ESC] to return.";
+        // Navigation footer - show scroll controls for About page
+        let footer_text = if title.contains("About RuixenOS") {
+            "[←] [→] Scroll | [ESC] Return"
+        } else {
+            "Press [ESC] to return."
+        };
         let footer = Paragraph::new(footer_text)
             .alignment(Alignment::Center)
-            .style(self.theme.ratatui_style(Element::Inactive))
-            .wrap(Wrap { trim: true });
+            .style(self.theme.ratatui_style(Element::Inactive));
 
         frame.render_widget(footer, chunks[1]);
     }
@@ -841,7 +851,7 @@ impl App {
                                 // Show About modal - same as /about command
                                 self.coaching_tip = (
                                     "About RuixenOS v0.1.0".to_string(),
-                                    "🎯 The Curiosity Machine\nTransforming queries into thoughtful Ruixen inquiries since 2025.\nBuilt with Rust, ratatui, and endless wonder.".to_string(),
+                                    "🎯 The Curiosity Machine\nTransforming queries into thoughtful Ruixen inquiries since 2025.\nBuilt with Rust, ratatui, and endless wonder.\n\n💝 Builder's Note:\nThis app was crafted with constitutional Rust patterns, following the RuixenOS workspace architecture. Every emoji expression, every token counted, every error handled gracefully. It's been an absolute joy building something that turns simple questions into profound explorations. The curiosity machine doesn't just process queries - it awakens wonder.\n\n🤝 Co-built with love by humans and AI agents working in harmony.".to_string(),
                                 );
                                 self.mode = AppMode::CoachingTip;
                             }
@@ -1167,7 +1177,48 @@ impl App {
                             _ => {}
                         },
                         AppMode::CoachingTip => match key.code {
+                            KeyCode::Left => {
+                                // Scroll up through About content (only for About page)
+                                if self.coaching_tip.0.contains("About RuixenOS")
+                                    && self.about_scroll > 0
+                                {
+                                    self.about_scroll -= 1;
+                                }
+                            }
+                            KeyCode::Right => {
+                                // Scroll down through About content (only for About page)
+                                if self.coaching_tip.0.contains("About RuixenOS") {
+                                    // Calculate max scroll based on content length
+                                    let content = &self.coaching_tip.1;
+                                    let approx_usable_width = 50u16; // Conservative estimate for modal width
+                                    let approx_display_height = 8u16; // Conservative estimate (modal height - borders)
+
+                                    let lines: Vec<&str> = content.lines().collect();
+                                    let total_wrapped_lines: u16 = lines
+                                        .iter()
+                                        .map(|line| {
+                                            if line.is_empty() {
+                                                1 // Empty lines still take space
+                                            } else {
+                                                ((line.len() as f32 / approx_usable_width as f32)
+                                                    .ceil()
+                                                    as u16)
+                                                    .max(1)
+                                            }
+                                        })
+                                        .sum();
+
+                                    let max_scroll =
+                                        total_wrapped_lines.saturating_sub(approx_display_height);
+
+                                    if max_scroll > 0 && self.about_scroll < max_scroll {
+                                        self.about_scroll += 1;
+                                    }
+                                }
+                            }
                             KeyCode::Enter | KeyCode::Esc => {
+                                // Reset scroll when closing and return to appropriate mode
+                                self.about_scroll = 0;
                                 // About modal should return to main menu, errors return to chat
                                 if self.coaching_tip.0.contains("About RuixenOS") {
                                     self.mode = AppMode::Normal;

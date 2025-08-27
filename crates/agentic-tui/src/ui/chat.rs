@@ -63,6 +63,7 @@ const GAP_HEIGHT: u16 = 1;
 const MAIN_TOTAL_HEIGHT: u16 = MAIN_LOGO_HEIGHT + GAP_HEIGHT + TEXT_HEIGHT;
 const SPIRAL_TOTAL_HEIGHT: u16 = SPIRAL_GALAXY_HEIGHT;
 
+#[allow(clippy::too_many_arguments)]
 pub fn render_chat(
     frame: &mut Frame,
     area: Rect,
