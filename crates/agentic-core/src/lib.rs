@@ -295,6 +295,48 @@ mod tests {
         }
     }
 
+    #[tokio::test]
+    async fn test_provider_detection() {
+        use crate::models::{LocalProvider, ModelValidator};
+
+        println!("🧪 Testing provider detection system...");
+
+        let validator = ModelValidator::new();
+
+        // Test provider detection for common endpoints
+        let ollama_provider = validator.detect_provider_type("localhost:11434").await;
+        let lmstudio_provider = validator.detect_provider_type("localhost:1234").await;
+        let custom_provider = validator.detect_provider_type("localhost:8080").await;
+
+        println!("Provider detection results:");
+        println!("  Ollama (11434): {:?}", ollama_provider);
+        println!("  LM Studio (1234): {:?}", lmstudio_provider);
+        println!("  Custom (8080): {:?}", custom_provider);
+
+        // Test fetching local models if Ollama is available
+        if ollama_provider == LocalProvider::Ollama {
+            println!("Testing local model fetching...");
+            match validator.fetch_local_models("localhost:11434").await {
+                Ok(models) => {
+                    println!("✅ Successfully fetched {} local models", models.len());
+                    for model in models.iter().take(3) {
+                        println!("  - {} ({:?}, {})", model.name, model.provider, model.size);
+                    }
+                }
+                Err(e) => {
+                    println!(
+                        "⚠️ Could not fetch local models (Ollama not running): {}",
+                        e
+                    );
+                }
+            }
+        } else {
+            println!("⚠️ Ollama not detected, skipping local model test");
+        }
+
+        println!("✅ Provider detection test completed!");
+    }
+
     #[test]
     fn test_api_key_truncation() {
         // Test the API key display formatting (simulating the settings modal function)

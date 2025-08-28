@@ -18,6 +18,22 @@ pub struct OllamaModel {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalModel {
+    pub name: String,
+    pub id: String,
+    pub provider: LocalProvider,
+    pub size: String,
+    pub modified: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum LocalProvider {
+    Ollama,
+    LMStudio,
+    OpenAI,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OpenRouterModel {
     pub id: String,
     pub name: String,
@@ -64,6 +80,20 @@ struct ModelPricingRaw {
     completion: String,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+struct OpenAIListResponse {
+    data: Vec<OpenAIModelRaw>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct OpenAIModelRaw {
+    id: String,
+    #[serde(default)]
+    name: Option<String>,
+    #[serde(default)]
+    created: Option<u64>,
+}
+
 pub struct ModelValidator {
     client: Client,
 }
@@ -76,6 +106,83 @@ impl ModelValidator {
             .unwrap_or_default();
 
         Self { client }
+    }
+
+    pub async fn detect_provider_type(&self, endpoint: &str) -> LocalProvider {
+        // Try OpenAI/LM Studio API first for port 1234
+        if endpoint.to_lowercase().contains("1234")
+            && self.test_openai_endpoint(endpoint).await.is_ok()
+        {
+            return LocalProvider::LMStudio;
+        }
+
+        // Try Ollama API
+        if self.test_ollama_endpoint(endpoint).await.is_ok() {
+            return LocalProvider::Ollama;
+        }
+
+        // Try generic OpenAI API
+        if self.test_openai_endpoint(endpoint).await.is_ok() {
+            return LocalProvider::OpenAI;
+        }
+
+        // Default to Ollama if all detection fails
+        LocalProvider::Ollama
+    }
+
+    async fn test_ollama_endpoint(&self, endpoint: &str) -> Result<()> {
+        let url = if endpoint.starts_with("http") {
+            format!("{}/api/tags", endpoint)
+        } else {
+            format!("http://{}/api/tags", endpoint)
+        };
+
+        let response = self.client.get(&url).send().await?;
+        if response.status().is_success() {
+            Ok(())
+        } else {
+            Err(anyhow::anyhow!("Ollama endpoint not accessible"))
+        }
+    }
+
+    async fn test_openai_endpoint(&self, endpoint: &str) -> Result<()> {
+        let normalized_endpoint = endpoint.to_lowercase();
+        let url = if normalized_endpoint.starts_with("http") {
+            format!("{}/v1/models", normalized_endpoint)
+        } else {
+            format!("http://{}/v1/models", normalized_endpoint)
+        };
+
+        let response = self.client.get(&url).send().await?;
+        if response.status().is_success() {
+            Ok(())
+        } else {
+            Err(anyhow::anyhow!("OpenAI endpoint not accessible"))
+        }
+    }
+
+    pub async fn fetch_local_models(&self, endpoint: &str) -> Result<Vec<LocalModel>> {
+        let provider = self.detect_provider_type(endpoint).await;
+
+        match provider {
+            LocalProvider::Ollama => {
+                let ollama_models = self.fetch_ollama_models(endpoint).await?;
+                let local_models = ollama_models
+                    .into_iter()
+                    .map(|model| LocalModel {
+                        name: model.name.clone(),
+                        id: model.name,
+                        provider: LocalProvider::Ollama,
+                        size: model.size,
+                        modified: model.modified,
+                    })
+                    .collect();
+                Ok(local_models)
+            }
+            LocalProvider::LMStudio | LocalProvider::OpenAI => {
+                self.fetch_openai_models(endpoint).await
+            }
+        }
     }
 
     pub async fn fetch_ollama_models(&self, endpoint: &str) -> Result<Vec<OllamaModel>> {
@@ -156,41 +263,116 @@ impl ModelValidator {
         Ok(models)
     }
 
-    pub async fn validate_local_endpoint(&self, endpoint: &str, model: &str) -> Result<()> {
+    pub async fn fetch_openai_models(&self, endpoint: &str) -> Result<Vec<LocalModel>> {
         let url = if endpoint.starts_with("http") {
-            format!("{}/api/tags", endpoint)
+            format!("{}/v1/models", endpoint)
         } else {
-            format!("http://{}/api/tags", endpoint)
+            format!("http://{}/v1/models", endpoint)
         };
 
         let response = self.client.get(&url).send().await?;
 
         if !response.status().is_success() {
-            return Err(anyhow::anyhow!("Local endpoint not accessible"));
+            return Err(anyhow::anyhow!("OpenAI/LM Studio endpoint not accessible"));
         }
 
-        let models: Value = response.json().await?;
+        let openai_response: OpenAIListResponse = response.json().await?;
 
-        if let Some(models_array) = models.get("models").and_then(|m| m.as_array()) {
-            let model_exists = models_array.iter().any(|m| {
-                m.get("name")
-                    .and_then(|name| name.as_str())
-                    .map(|name| name == model)
-                    .unwrap_or(false)
-            });
-
-            if model_exists {
-                Ok(())
-            } else {
-                Err(anyhow::anyhow!(
-                    "Model '{}' not found on local endpoint",
-                    model
-                ))
-            }
+        let provider = if endpoint.contains("1234") {
+            LocalProvider::LMStudio
         } else {
-            Err(anyhow::anyhow!(
-                "Invalid response format from local endpoint"
-            ))
+            LocalProvider::OpenAI
+        };
+
+        let models = openai_response
+            .data
+            .into_iter()
+            .map(|raw| LocalModel {
+                name: raw.name.unwrap_or_else(|| raw.id.clone()),
+                id: raw.id,
+                provider: provider.clone(),
+                size: "Unknown".to_string(),
+                modified: "recently".to_string(),
+            })
+            .collect();
+
+        Ok(models)
+    }
+
+    pub async fn validate_local_endpoint(&self, endpoint: &str, model: &str) -> Result<()> {
+        let provider = self.detect_provider_type(endpoint).await;
+
+        match provider {
+            LocalProvider::Ollama => {
+                let url = if endpoint.starts_with("http") {
+                    format!("{}/api/tags", endpoint)
+                } else {
+                    format!("http://{}/api/tags", endpoint)
+                };
+
+                let response = self.client.get(&url).send().await?;
+                if !response.status().is_success() {
+                    return Err(anyhow::anyhow!("Local endpoint not accessible"));
+                }
+
+                let models: Value = response.json().await?;
+                if let Some(models_array) = models.get("models").and_then(|m| m.as_array()) {
+                    let model_exists = models_array.iter().any(|m| {
+                        m.get("name")
+                            .and_then(|name| name.as_str())
+                            .map(|name| name == model)
+                            .unwrap_or(false)
+                    });
+
+                    if model_exists {
+                        Ok(())
+                    } else {
+                        Err(anyhow::anyhow!(
+                            "Model '{}' not found on local endpoint",
+                            model
+                        ))
+                    }
+                } else {
+                    Err(anyhow::anyhow!(
+                        "Invalid response format from local endpoint"
+                    ))
+                }
+            }
+            LocalProvider::LMStudio | LocalProvider::OpenAI => {
+                let url = if endpoint.starts_with("http") {
+                    format!("{}/v1/models", endpoint)
+                } else {
+                    format!("http://{}/v1/models", endpoint)
+                };
+
+                let response = self.client.get(&url).send().await?;
+                if !response.status().is_success() {
+                    return Err(anyhow::anyhow!("Local endpoint not accessible"));
+                }
+
+                let models: Value = response.json().await?;
+                if let Some(models_array) = models.get("data").and_then(|m| m.as_array()) {
+                    let model_exists = models_array.iter().any(|m| {
+                        m.get("id")
+                            .and_then(|id| id.as_str())
+                            .map(|id| id == model)
+                            .unwrap_or(false)
+                    });
+
+                    if model_exists {
+                        Ok(())
+                    } else {
+                        Err(anyhow::anyhow!(
+                            "Model '{}' not found on local endpoint",
+                            model
+                        ))
+                    }
+                } else {
+                    Err(anyhow::anyhow!(
+                        "Invalid response format from local endpoint"
+                    ))
+                }
+            }
         }
     }
 
@@ -302,6 +484,22 @@ pub async fn call_local_model(
     model: &str,
     prompt: &str,
 ) -> Result<String, anyhow::Error> {
+    let validator = ModelValidator::new();
+    let provider = validator.detect_provider_type(endpoint).await;
+
+    match provider {
+        LocalProvider::Ollama => call_ollama_model(endpoint, model, prompt).await,
+        LocalProvider::LMStudio | LocalProvider::OpenAI => {
+            call_openai_model(endpoint, model, prompt).await
+        }
+    }
+}
+
+pub async fn call_ollama_model(
+    endpoint: &str,
+    model: &str,
+    prompt: &str,
+) -> Result<String, anyhow::Error> {
     let client = Client::new();
     let url = if endpoint.starts_with("http") {
         format!("{}/api/generate", endpoint)
@@ -324,6 +522,74 @@ pub async fn call_local_model(
         Err(anyhow::anyhow!(
             "Failed to get response from local model. Status: {}",
             response.status()
+        ))
+    }
+}
+
+#[derive(Serialize)]
+struct OpenAIGenerationRequest<'a> {
+    model: &'a str,
+    messages: Vec<serde_json::Value>,
+    max_tokens: u32,
+    temperature: f32,
+}
+
+#[derive(Deserialize)]
+struct OpenAIGenerationResponse {
+    choices: Vec<OpenAIChoice>,
+}
+
+#[derive(Deserialize)]
+struct OpenAIChoice {
+    message: OpenAIMessage,
+}
+
+#[derive(Deserialize)]
+struct OpenAIMessage {
+    content: String,
+}
+
+pub async fn call_openai_model(
+    endpoint: &str,
+    model: &str,
+    prompt: &str,
+) -> Result<String, anyhow::Error> {
+    let client = Client::new();
+    let url = if endpoint.starts_with("http") {
+        format!("{}/v1/chat/completions", endpoint)
+    } else {
+        format!("http://{}/v1/chat/completions", endpoint)
+    };
+
+    let payload = OpenAIGenerationRequest {
+        model,
+        messages: vec![serde_json::json!({
+            "role": "user",
+            "content": prompt
+        })],
+        max_tokens: 2000,
+        temperature: 0.7,
+    };
+
+    let response = client.post(&url).json(&payload).send().await?;
+
+    if response.status().is_success() {
+        let gen_response: OpenAIGenerationResponse = response.json().await?;
+        if let Some(choice) = gen_response.choices.first() {
+            Ok(choice.message.content.clone())
+        } else {
+            Err(anyhow::anyhow!("No response choices from OpenAI model"))
+        }
+    } else {
+        let status = response.status();
+        let error_text = response
+            .text()
+            .await
+            .unwrap_or_else(|_| "Unknown error".to_string());
+        Err(anyhow::anyhow!(
+            "Failed to get response from OpenAI model. Status: {}. Error: {}",
+            status,
+            error_text
         ))
     }
 }

@@ -7,7 +7,7 @@ use super::{
 };
 use agentic_core::{
     cloud::{self, CloudError},
-    models::{AtomicNote, ModelValidator, OllamaModel, OpenRouterModel},
+    models::{AtomicNote, LocalModel, ModelValidator, OpenRouterModel},
     orchestrator,
     settings::{Settings, ValidationError},
     theme::{Element, Theme},
@@ -56,7 +56,7 @@ pub enum AgentStatus {
 pub enum ValidationMessage {
     LocalValidationComplete(Result<(), ValidationError>),
     CloudValidationComplete(Result<(), ValidationError>),
-    LocalModelsLoaded(Result<Vec<OllamaModel>, anyhow::Error>),
+    LocalModelsLoaded(Result<Vec<LocalModel>, anyhow::Error>),
     CloudModelsLoaded(Result<Vec<OpenRouterModel>, anyhow::Error>),
 }
 
@@ -149,7 +149,7 @@ pub struct App {
     agent_rx: mpsc::UnboundedReceiver<AgentMessage>,
     agent_tx: mpsc::UnboundedSender<AgentMessage>,
     edit_buffer: String,
-    available_local_models: Vec<OllamaModel>,
+    available_local_models: Vec<LocalModel>,
     available_cloud_models: Vec<OpenRouterModel>,
     selected_model_index: usize,
     current_page: usize,
@@ -1523,7 +1523,7 @@ impl App {
         let endpoint = self.settings.endpoint.clone();
         tokio::spawn(async move {
             let validator = ModelValidator::new();
-            let result = validator.fetch_ollama_models(&endpoint).await;
+            let result = validator.fetch_local_models(&endpoint).await;
             let _ = tx.send(ValidationMessage::LocalModelsLoaded(result));
         });
 

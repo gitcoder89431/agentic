@@ -61,9 +61,26 @@ pub async fn generate_proposals(
     // Debug: Write the response to a file so we can see what came back
     std::fs::write("/tmp/debug_response.txt", &response_str).ok();
 
+    // Extract JSON from markdown code blocks if present
+    let clean_response = if response_str.contains("```json") {
+        // Extract content between ```json and ```
+        if let Some(json_start) = response_str.find("```json") {
+            let after_start = &response_str[json_start + 7..]; // Skip "```json"
+            if let Some(json_end) = after_start.find("```") {
+                after_start[..json_end].trim()
+            } else {
+                &response_str
+            }
+        } else {
+            &response_str
+        }
+    } else {
+        &response_str
+    };
+
     // Attempt to find the start of the JSON object
-    if let Some(json_start) = response_str.find("{") {
-        let json_str = &response_str[json_start..];
+    if let Some(json_start) = clean_response.find("{") {
+        let json_str = &clean_response[json_start..];
         match serde_json::from_str::<ProposalsResponse>(json_str) {
             Ok(response) => {
                 let proposals = response
