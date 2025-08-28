@@ -125,8 +125,25 @@ pub async fn call_cloud_model(
         .map(|choice| &choice.message.content)
         .ok_or(CloudError::ParseError)?;
 
+    // Extract JSON from markdown code blocks if present
+    let clean_content = if message_content.contains("```json") {
+        // Extract content between ```json and ```
+        if let Some(json_start) = message_content.find("```json") {
+            let after_start = &message_content[json_start + 7..]; // Skip "```json"
+            if let Some(json_end) = after_start.find("```") {
+                after_start[..json_end].trim()
+            } else {
+                message_content
+            }
+        } else {
+            message_content
+        }
+    } else {
+        message_content
+    };
+
     let atomic_note: AtomicNote =
-        serde_json::from_str(message_content).map_err(|_| CloudError::ParseError)?;
+        serde_json::from_str(clean_content).map_err(|_| CloudError::ParseError)?;
 
     Ok(atomic_note)
 }
