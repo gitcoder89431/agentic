@@ -25,6 +25,7 @@ Agentic transforms the typical command-response dynamic into true collaboration.
 ## Key Features
 
 • **Collaborative Query Refinement** via a Local AI Orchestrator  
+• **Multi-Provider Support** - Ollama, LM Studio, or any OpenAI-compatible API
 • **Seamless Integration** with Powerful Cloud Models (via OpenRouter)  
 • **Minimalist, Keyboard-Driven** "Zen Garden" TUI  
 • **Creates Structured, "Atomic Notes"** (Markdown + YAML) for your Knowledge Base  
@@ -32,24 +33,11 @@ Agentic transforms the typical command-response dynamic into true collaboration.
 
 ## Installation
 
-### Download Release Binaries
-
-**macOS (Intel/Apple Silicon)**
+### Install via Cargo (Recommended)
 ```bash
-curl -L https://github.com/gitcoder89431/agentic/releases/download/v0.1.3/agentic-macos.tar.gz | tar xz
-sudo mv agentic /usr/local/bin/
-```
-
-**Linux (x86_64)**  
-```bash
-curl -L https://github.com/gitcoder89431/agentic/releases/download/v0.1.3/agentic-linux.tar.gz | tar xz
-sudo mv agentic /usr/local/bin/
-```
-
-**Windows**
-```powershell
-# Download from releases page and add to PATH
-# https://github.com/gitcoder89431/agentic/releases/download/v0.1.3/agentic-windows.zip
+cargo install ruixen
+# Then run with:
+ruixen
 ```
 
 ### Build from Source
@@ -58,13 +46,6 @@ git clone https://github.com/gitcoder89431/agentic.git
 cd agentic
 cargo build --release
 ./target/release/ruixen
-```
-
-### Install via Cargo
-```bash
-cargo install ruixen
-# Then run with:
-ruixen
 ```
 
 ## Configuration
@@ -77,6 +58,9 @@ Follow these steps in order - you need both components:
 
 #### Step 1: Local AI Setup (Required)
 
+Choose **either** Ollama OR LM Studio:
+
+**Option A: Ollama (Recommended for beginners)**
 1. **Install Ollama** (Free, runs on your computer)
    ```bash
    # macOS
@@ -98,8 +82,17 @@ Follow these steps in order - you need both components:
 
 3. **Configure in Agentic**
    - In Settings, set "Local Endpoint" to `localhost:11434`
+   - Agentic auto-detects Ollama and loads your models
    - Select your downloaded model from the list
-   - This handles initial query refinement privately on your machine
+
+**Option B: LM Studio (For power users)**
+1. **Install LM Studio** from https://lmstudio.ai
+2. **Download and load a model** in LM Studio
+3. **Start the local server** (usually `localhost:1234`)
+4. **Configure in Agentic**
+   - In Settings, set "Local Endpoint" to `localhost:1234`
+   - Agentic auto-detects LM Studio and loads your models
+   - Select your model from the list
 
 #### Step 2: Cloud Setup (Required)
 

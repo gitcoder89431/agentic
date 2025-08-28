@@ -20,7 +20,7 @@ pub fn render_header(
     cloud_tokens: u32,
 ) {
     // Dynamic title based on what's actually configured - much smarter!
-    let title = Title::from(" Agentic v0.1.2 ").alignment(Alignment::Left);
+    let title = Title::from(" Agentic v0.1.3 ").alignment(Alignment::Left);
 
     let (status_text, status_color) =
         build_smart_status_with_color(status, settings, local_tokens, cloud_tokens);
