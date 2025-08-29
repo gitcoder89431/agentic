@@ -2,7 +2,16 @@ use anyhow::Result;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
+
+// Global provider cache to ensure consistency across different ModelValidator instances
+static PROVIDER_CACHE: OnceLock<Arc<Mutex<HashMap<String, LocalProvider>>>> = OnceLock::new();
+
+fn get_global_provider_cache() -> &'static Arc<Mutex<HashMap<String, LocalProvider>>> {
+    PROVIDER_CACHE.get_or_init(|| Arc::new(Mutex::new(HashMap::new())))
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AtomicNote {
@@ -109,6 +118,26 @@ impl ModelValidator {
     }
 
     pub async fn detect_provider_type(&self, endpoint: &str) -> LocalProvider {
+        // Check global cache first
+        let cache = get_global_provider_cache();
+        if let Ok(cache_lock) = cache.lock() {
+            if let Some(cached_provider) = cache_lock.get(endpoint) {
+                return cached_provider.clone();
+            }
+        }
+
+        // Perform actual detection
+        let detected_provider = self.perform_provider_detection(endpoint).await;
+
+        // Cache the result globally
+        if let Ok(mut cache_lock) = cache.lock() {
+            cache_lock.insert(endpoint.to_string(), detected_provider.clone());
+        }
+
+        detected_provider
+    }
+
+    async fn perform_provider_detection(&self, endpoint: &str) -> LocalProvider {
         // Try OpenAI/LM Studio API first for port 1234
         if endpoint.to_lowercase().contains("1234")
             && self.test_openai_endpoint(endpoint).await.is_ok()

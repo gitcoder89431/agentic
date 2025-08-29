@@ -84,14 +84,24 @@ impl Settings {
         // First do basic validation
         self.is_valid()?;
 
-        // Then validate actual endpoints
+        // Then validate actual endpoints and generation capabilities
         validator
             .validate_local_endpoint(&self.endpoint, &self.local_model)
             .await
             .map_err(|_| ValidationError::LocalEndpointUnreachable)?;
 
         validator
+            .test_local_generation(&self.endpoint, &self.local_model)
+            .await
+            .map_err(|_| ValidationError::LocalEndpointUnreachable)?;
+
+        validator
             .validate_cloud_endpoint(&self.api_key, &self.cloud_model)
+            .await
+            .map_err(|_| ValidationError::CloudEndpointUnreachable)?;
+
+        validator
+            .test_cloud_generation(&self.api_key, &self.cloud_model)
             .await
             .map_err(|_| ValidationError::CloudEndpointUnreachable)?;
 
@@ -104,8 +114,16 @@ impl Settings {
         }
 
         let validator = ModelValidator::new();
+
+        // First validate the model exists
         validator
             .validate_local_endpoint(&self.endpoint, &self.local_model)
+            .await
+            .map_err(|_| ValidationError::LocalEndpointUnreachable)?;
+
+        // Then test actual generation capability
+        validator
+            .test_local_generation(&self.endpoint, &self.local_model)
             .await
             .map_err(|_| ValidationError::LocalEndpointUnreachable)?;
 
@@ -121,8 +139,16 @@ impl Settings {
         }
 
         let validator = ModelValidator::new();
+
+        // First validate the model exists
         validator
             .validate_cloud_endpoint(&self.api_key, &self.cloud_model)
+            .await
+            .map_err(|_| ValidationError::CloudEndpointUnreachable)?;
+
+        // Then test actual generation capability
+        validator
+            .test_cloud_generation(&self.api_key, &self.cloud_model)
             .await
             .map_err(|_| ValidationError::CloudEndpointUnreachable)?;
 
